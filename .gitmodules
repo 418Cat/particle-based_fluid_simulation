@@ -1,0 +1,6 @@
+[submodule "libs/utils"]
+	path = libs/utils
+	url = https://github.com/418cat/utils.git
+[submodule "libs/imgui"]
+	path = libs/imgui
+	url = https://github.com/ocornut/imgui
