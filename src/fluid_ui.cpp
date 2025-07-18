@@ -8,7 +8,7 @@ float FlUId::settings_window_ratio = 1.f/5.f;
 void FlUId::side_window()
 {
 	// Make it a left bar window
-	ImGui::SetNextWindowPos(ImVec2(0., 0.));
+	//ImGui::SetNextWindowPos(ImVec2(0., 0.));
 	ImGui::SetNextWindowSize(ImVec2(
 				FlUId::window_size.x * FlUId::settings_window_ratio,
 				FlUId::window_size.y
@@ -16,10 +16,10 @@ void FlUId::side_window()
 	
 	ImGui::Begin(
 			"side_window",
-			NULL,
+			NULL/*,
 				ImGuiWindowFlags_NoDecoration 	|
 				ImGuiWindowFlags_NoResize		|
-				ImGuiWindowFlags_NoMove
+				ImGuiWindowFlags_NoMove*/
 	);
 
 	ImGui::Text("Hello");
@@ -68,7 +68,7 @@ bool FlUId::render()
 	FlUId::update_state();
 
 	FlUId::side_window();
-	FlUId::rendering_window();
+	//FlUId::rendering_window();
 
 	UI::ui_render_stop();
 
