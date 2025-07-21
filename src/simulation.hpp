@@ -18,7 +18,9 @@ struct particle_t
 struct domain_t
 {
 	vec2 size = vec2(1., 1.);
+	bool radial_gravity = false;
 	vec2 gravity = vec2(0., -9.81);
+	float bounciness = 1.;
 	std::chrono::time_point<std::chrono::system_clock> last_update = std::chrono::system_clock::now();
 };
 
@@ -31,6 +33,8 @@ class Simulation
 		particle_t *new_particles;
 		domain_t domain;
 		float speed = 1.;
+
+		float particles_bounciness = 1.;
 
 		void spawn_particles_as_rect()
 		{
@@ -76,8 +80,20 @@ class Simulation
 			}
 		}
 
-		vec2 total_forces_on_particle(int p_i)
+		vec2 total_forces_on_particle(particle_t* p)
 		{
+			if(domain.radial_gravity)
+			{
+				vec2 to_center = vec2(domain.size.x / 2., domain.size.y / 2.) - p->position;
+				float distance = glm::length(to_center);
+				float gravity_norm = glm::length(domain.gravity);
+
+				to_center.x *= gravity_norm / distance;
+				to_center.y *= gravity_norm / distance;
+
+				return to_center;
+			}
+
 			return domain.gravity;
 		}
 
@@ -89,27 +105,45 @@ class Simulation
 
 				particle_t* p_current = &particles[p_i];
 
+				// Early return with cheap test
+				float delta_x = p->position.x - p_current->position.x;
+				float delta_y = p->position.y - p_current->position.y;
+				if(delta_x > 2. || delta_x < -2. || delta_y > 2. || delta_y < -2.) continue;
+
 				// Vector going from p_current's center to p's center,
 				// normal to the surface of both
 				vec2 normal = p->position - p_current->position;
-				vec2 normalized_normal = glm::normalize(normal);
 
+				// Divided by 2 because the radius is 1
+				// So if there's a collision:
+				// |normal| / 2 <= 1
 				float pyth = glm::length(normal) / 2.;
-
+				
 				// Collision happens
-				if(pyth < 1. && pyth > -1.)
+				if(pyth <= 1. && pyth >= -1.)
 				{
+					// glm doesn't support vector <-> scalar multiplication so it's ugly
+					// normal / (2*pyth)
+					vec2 normalized_normal = vec2(normal.x / (pyth*2.), normal.y / (pyth*2.));
+
+					// Particle is inside another, move it away:
+					// normalized normal is of length 1 and points from p to p_current
+					// d = 2r - n
+					// with n the distance between p and p_current (so length of normal)
+					// r the radius (so length of normalized normal)
+					// and d the distance between the two surfaces
 					p->position += vec2(normalized_normal.x*2. - normal.x, normalized_normal.y*2. - normal.y);
 
 					float norm_vel_dot = glm::dot(normalized_normal, p->velocity);
 
+					// Bounce symmetrically from the normal vector
 					vec2 bounce =
 						vec2(p->velocity.x, p->velocity.y) +
 						vec2(normalized_normal.x*-2.*norm_vel_dot, normalized_normal.y*-2.*norm_vel_dot);
 
 					p->velocity = bounce;
-					p->velocity.x *= .9;
-					p->velocity.y *= .9;
+					p->velocity.x *= particles_bounciness;
+					p->velocity.y *= particles_bounciness;
 				}
 			}
 		}
@@ -119,24 +153,24 @@ class Simulation
 			// Floor & Ceiling
 			if(p->position.y < 1.)
 			{
-				p->velocity.y = -p->velocity.y * 0.9;
+				p->velocity.y = -p->velocity.y * domain.bounciness;
 				p->position.y = 1.;
 			}
 			if(p->position.y > domain.size.y - 1)
 			{
-				p->velocity.y = -p->velocity.y * 0.9;
+				p->velocity.y = -p->velocity.y * domain.bounciness;
 				p->position.y = domain.size.y - 1.;
 			}
 
 			// Walls
 			if(p->position.x < 1.)
 			{
-				p->velocity.x = -p->velocity.x * .9;
+				p->velocity.x = -p->velocity.x * domain.bounciness;
 				p->position.x = 1.;
 			}
 			if(p->position.x > domain.size.x - 1.)
 			{
-				p->velocity.x = -p->velocity.x * .9;
+				p->velocity.x = -p->velocity.x * domain.bounciness;
 				p->position.x = domain.size.x - 1.;
 			}
 		}
@@ -157,7 +191,7 @@ class Simulation
 
 		void tick()
 		{
-
+			// One weird bug, delta_t increases dramatically when the mouse goes over the top window bar
 			float delta_t = (std::chrono::system_clock::now() - domain.last_update).count() / 1e9f;
 			delta_t *= speed;
 
@@ -186,7 +220,7 @@ class Simulation
 				// are constant in the interval (t, t+1). The higher the tickrate, the 
 				// more accurate the sim will be as this interval will be reduced
 
-				n_p->velocity += total_forces_on_particle(p_i) * delta_t;	//  v(t-1) + a(t)*t
+				n_p->velocity += total_forces_on_particle(p) * delta_t;	//  v(t-1) + a(t)*t
 				n_p->position += n_p->velocity*delta_t; 					//  p(t-1) + v(t)*t
 
 				collision_check(n_p, p_i);
