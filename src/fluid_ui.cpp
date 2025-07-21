@@ -4,6 +4,7 @@
 
 ImVec2 FlUId::window_size = ImVec2(0.f, 0.f);
 float FlUId::settings_window_ratio = 1.f/5.f;
+GLFWwindow* FlUId::window = UI::window;
 
 void FlUId::side_window()
 {
@@ -59,7 +60,7 @@ void FlUId::update_state()
 	FlUId::window_size = ImGui::GetIO().DisplaySize;
 }
 
-bool FlUId::render()
+bool FlUId::render_start()
 {
 	if(!UI::ui_is_shown()) return false;
 
@@ -67,18 +68,23 @@ bool FlUId::render()
 
 	FlUId::update_state();
 
-	FlUId::side_window();
+	//FlUId::side_window();
 	//FlUId::rendering_window();
 
-	UI::ui_render_stop();
-
 	return true;
+}
+
+void FlUId::render_stop()
+{
+	UI::ui_render_stop();
 }
 
 void FlUId::begin()
 {
 	UI::ui_init();
 	UI::show_ui = true;
+
+	FlUId::window = UI::window;
 }
 
 int FlUId::end()

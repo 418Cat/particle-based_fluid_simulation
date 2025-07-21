@@ -1,5 +1,8 @@
 clear
+rm -rf build/src
 cd build
 cmake -B . ..
 cmake --build .
-./src/main
+
+cd ./src
+./main

@@ -16,16 +16,34 @@ target_link_libraries(
 # Building Simulation part
 add_library(
 	simulation
-	simulation.cpp
 	simulation.hpp
 )
 
 target_link_libraries(
 	simulation PUBLIC
 	glm
+	shader
+)
+
+set_target_properties(
+	simulation PROPERTIES
+	LINKER_LANGUAGE CXX
+)
+
+target_include_directories(
+	simulation PUBLIC
+	${CMAKE_SOURCE_DIR}/libs/glad/include
 )
 
 # Building render engine
+
+file( # Copy shaders to corresponding bin dir
+	COPY
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/
+	DESTINATION
+	${CMAKE_CURRENT_BINARY_DIR}/shaders/
+)
+
 add_library(
 	render
 	render.hpp
@@ -33,7 +51,13 @@ add_library(
 
 target_link_libraries(
 	render PUBLIC
-	glad
+	shader
+)
+
+target_include_directories(
+	render PUBLIC
+	${GLAD_INCLUDE_DIR}
+	${CMAKE_SOURCE_DIR}/libs/utils/shader/
 )
 
 set_target_properties(

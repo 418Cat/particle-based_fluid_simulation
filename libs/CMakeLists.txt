@@ -1,5 +1,3 @@
-add_subdirectory(utils/UI)
-
 # _____ BUILDING  IMGUI _____
 add_library(
 	imgui
@@ -72,4 +70,14 @@ target_link_libraries(
 	libglfw.so.3
 	libGL.so
 )
+
+set(
+	GLAD_INCLUDE_DIR
+	${CMAKE_CURRENT_SOURCE_DIR}/glad/include/
+)
+
 # ____________________
+
+
+add_subdirectory(utils/UI)
+add_subdirectory(utils/shader)
