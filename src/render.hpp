@@ -13,7 +13,8 @@
 class Render
 {
 	private:
-		unsigned int vao;
+		unsigned int vao_1;
+		unsigned int vao_2;
 		unsigned int vbo;
 		unsigned int ebo;
 		Shader* shaders;
@@ -49,12 +50,12 @@ class Render
 
 			this->window = win;
 
-			glGenVertexArrays(1, &vao);
+			glGenVertexArrays(1, &vao_1);
 			glGenBuffers(1, &vbo);
 			glGenBuffers(1, &ebo);
 			glGenBuffers(1, &positions_vbo);
 
-			glBindVertexArray(vao);
+			glBindVertexArray(vao_1);
 
 			glBindBuffer(GL_ARRAY_BUFFER, vbo);
 			glBufferData(GL_ARRAY_BUFFER, sizeof(tri), tri, GL_STATIC_DRAW);
@@ -71,11 +72,12 @@ class Render
 			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles*sizeof(particle_t), NULL, GL_DYNAMIC_DRAW);
 			
 			// 2nd attribute is position
-			// Since the data comes from sim->particles which is a struct with position and velocity,
-			// the stride must take it into account
-			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2*sizeof(vec2), (void*)0);
+			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)0);
 			glEnableVertexAttribArray(1);
 
+			// 3rd attribute is particle velocity
+			glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)sizeof(vec2));
+			glEnableVertexAttribArray(2);
 
 			std::cout << "GL Buffers generated" << std::endl;
 
@@ -86,12 +88,13 @@ class Render
 
 		void frame()
 		{
-			glBindVertexArray(vao);
+			glBindVertexArray(vao_1);
 			glBindBuffer(GL_ARRAY_BUFFER, positions_vbo);
 			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles*sizeof(particle_t), simulation->particles, GL_DYNAMIC_DRAW);
 
 			glVertexAttribDivisor(0, 0); // First attribute (Quad mesh) doesn't change
 			glVertexAttribDivisor(1, 1); // Second attribute (Particle pos) changes every 1 instance
+			glVertexAttribDivisor(2, 1); // Third one (velocity) too
 
 			shaders->use();
 

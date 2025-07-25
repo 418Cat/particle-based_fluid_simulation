@@ -2,10 +2,14 @@
 
 layout (location=0) in vec2 vs_pos;
 layout (location=1) in vec2 particle_pos;
+layout (location=2) in vec2 particle_velocity;
 
 uniform vec2 domain_size;
+//uniform vec2 window_size;
+//uniform float particle_size;
 
 out vec2 fs_uv;
+out vec2 velocity;
 
 void main()
 {
@@ -14,4 +18,5 @@ void main()
 			, 0., 1.);
 
 	fs_uv = vs_pos;
+	velocity = particle_velocity;
 }

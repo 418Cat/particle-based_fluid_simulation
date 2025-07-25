@@ -1,3 +1,4 @@
+#include "geometric.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "render.hpp"
@@ -13,8 +14,8 @@ int main()
 	FlUId::begin();
 
 	Simulation sim = Simulation(
-		900,
-		glm::vec2(150., 150.)		
+		20,
+		glm::vec2(20., 20.)		
 	);
 
 	Render render = Render(FlUId::window, &sim);
@@ -26,7 +27,7 @@ int main()
 		//if(_now - now > frametime)
 		{
 			//FlUId::render_start();
-			ImGui::SliderFloat("Sim speed", &sim.speed, 0., 100.);
+			ImGui::SliderFloat("Sim speed", &sim.speed, 0., 2.);
 
 			ImGui::Checkbox("Radial gravity", &sim.domain.radial_gravity);
 			ImGui::SliderFloat2("Domain gravity, m/s", &sim.domain.gravity.x, -20., 20.);
@@ -36,6 +37,13 @@ int main()
 
 			if(ImGui::Button("Reset particles"))
 				sim.spawn_particles_as_rect();
+
+			ImGui::Text("Frametime: %.1f ms", sim.last_delta_t*1000.);
+			//ImGui::Text("Kinetic energy: %.1f");
+			if(sim.speed == 0. && ImGui::Button("Next tick"))
+			{
+				sim.tick();
+			}
 
 			render.frame();
 			FlUId::render_stop();

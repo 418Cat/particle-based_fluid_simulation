@@ -21,8 +21,8 @@ struct domain_t
 {
 	vec2 size = vec2(1., 1.);
 	bool radial_gravity = false;
-	vec2 gravity = vec2(0., 0./*-9.81*/);
-	float bounciness = 1.;
+	vec2 gravity = vec2(0., -9.81);
+	float bounciness = .9;
 	std::chrono::time_point<std::chrono::system_clock> last_update = std::chrono::system_clock::now();
 };
 
@@ -35,8 +35,9 @@ class Simulation
 		particle_t *new_particles;
 		domain_t domain;
 		float speed = 1.;
+		float last_delta_t = 0.;
 
-		float particles_bounciness = 1.;
+		float particles_bounciness = .9;
 
 		void spawn_particles_as_rect()
 		{
@@ -99,22 +100,22 @@ class Simulation
 			return domain.gravity;
 		}
 
-		void collision_check(particle_t* p, int i)
+		void collision_check(particle_t* A, int i)
 		{
 			for(int p_i = 0; p_i < n_particles; p_i++)
 			{
 				if(i == p_i) continue;
 
-				particle_t* p_current = &particles[p_i];
+				particle_t* B = &particles[p_i];
 
 				// Early continue with cheap test
-				float delta_x = p->position.x - p_current->position.x;
-				float delta_y = p->position.y - p_current->position.y;
+				float delta_x = A->position.x - B->position.x;
+				float delta_y = A->position.y - B->position.y;
 				if(delta_x > 2.*p_radius || delta_x < -2.*p_radius || delta_y > 2.*p_radius || delta_y < -2.*p_radius) continue;
 
-				// Vector going from p_current's center to p's center,
+				// Vector going from B's center to A's center,
 				// normal to the surface of both
-				vec2 normal = p->position - p_current->position;
+				vec2 normal = A->position - B->position;
 
 				float dist = glm::length(normal);
 
@@ -122,60 +123,22 @@ class Simulation
 				normal /= dist;
 				
 				// Collision happens
-				if(dist <= 2.*p_radius && dist >= -2.*p_radius)
+				if(dist < 2.*p_radius)
 				{
-					float v_a = glm::length(p->velocity);
-					float v_b = glm::length(p_current->velocity);
+					//std::cout << "Collision between " << i << " and " << p_i << " at dist " << dist << std::endl;
 
-					float m_a = p->mass;
-					float m_b = p_current->mass;
+					// A is inside B's radius, move it out
+					vec2 a_newpos = A->position + vec2(-normal.x * (dist - 2.*p_radius), -normal.y * (dist - 2.*p_radius));
 
-					// p = m*v
-					float momentum_a = v_a * m_a;
-					float momentum_b = v_b * m_b;
+					// dir = vel + 2*normal*dot(-vel, normal)
+					// Symmetrize (is that a word ?) the velocity vector
+					// from the normal vector (-vel because they face
+					// opposite from each other)
+					float dot_a_vel_normal = dot(-A->velocity, normal);
+					vec2 a_newdir = A->velocity + vec2(normal.x * 2. * dot_a_vel_normal, normal.y * 2. * dot_a_vel_normal);
 
-					float total_momentum = momentum_a + momentum_b;
-
-					// k = 1/2 * m * v²
-					float kinetic_a = 1./2. * m_a * v_a*v_a;
-					float kinetic_b = 1./2. * m_b * v_b*v_b;
-
-					float total_kinetic = kinetic_a + kinetic_b;
-
-					// `normal` var points from p_current's center to p's center
-					vec2 normal_a = -normal;
-					//vec2 normal_b = -normal;
-
-					// glm doesn't provide scalar <-> vector multiplication
-					// Dot product should be cheap but i just store it to use twice
-					float vel_a_norm_dot = glm::dot(p->velocity, normal_a);
-					vec2 dir_a = p->velocity + vec2(normal_a.x * 2.*vel_a_norm_dot, normal_a.y * 2.*vel_a_norm_dot);
-					dir_a = glm::normalize(dir_a);
-
-					float a = -2. * m_b / (m_a+m_b);
-					float dot_a = glm::dot(p->velocity - p_current->velocity, p->position - p_current->position);
-					float dist_squared = dist*dist;
-					vec2 diff = vec2(normal.x*dist, normal.y*dist);
-
-					float fact = a*dot_a/dist_squared;
-					vec2 vel_a = vec2(diff.x*fact, diff.y*fact);
-
-
-					//float vel_b_norm_dot = glm::dot(p_current->velocity, normal_b);
-					//vec2 dir_b = p_current->velocity + vec2(normal_b.x * 2.*vel_b_norm_dot, normal_b.y * 2.*vel_b_norm_dot);
-					//dir_b = glm::normalize(dir_b);
-					
-					float vel_a_final = v_a * (m_a-m_b) / (m_a+m_b)  +  v_b * 2.*m_b / (m_a+m_b);
-					float vel_b_final = v_b * (m_a-m_b) / (m_a+m_b)  +  v_a * 2.*m_a / (m_a+m_b);
-
-					//p->velocity = vec2(dir_a.x * vel_a_final, dir_a.y * vel_a_final);
-					p->velocity = vel_a;
-
-					printf("\n\nBounce between %d and %d. Current velocity: (%.1f, %.1f): %.1f", i, p_i, p->velocity.x, p->velocity.y, glm::length(v_a));
-					// Particle is inside another, move it away
-					p->position += vec2(normal.x*(2.*p_radius-dist), normal.y*(2.*p_radius-dist));
-
-					//printf("           New velocity: (%.1f, %.1f): %.1f\n", p->velocity.x, p->velocity.y, v_a_final);
+					A->velocity = vec2(a_newdir.x * particles_bounciness, a_newdir.y * particles_bounciness);
+					A->position = a_newpos;
 				}
 			}
 		}
@@ -225,7 +188,7 @@ class Simulation
 		{
 			// One weird bug, delta_t increases dramatically when the mouse goes over the top window bar
 			float delta_t = (std::chrono::system_clock::now() - domain.last_update).count() / 1e9f;
-			//delta_t = 0.01f;
+			last_delta_t = delta_t;
 			delta_t *= speed;
 
 			for(int p_i = 0; p_i < n_particles; p_i++)
@@ -253,15 +216,18 @@ class Simulation
 				// are constant in the interval (t, t+1). The higher the tickrate, the 
 				// more accurate the sim will be as this interval will be reduced
 
-				n_p->velocity += total_forces_on_particle(p) * delta_t;	//  v(t-1) + a(t)*t
-				n_p->position += n_p->velocity*delta_t; 					//  p(t-1) + v(t)*t
-
 				collision_check(n_p, p_i);
 				domain_boundaries(n_p);
 
-				p->position = n_p->position;
-				p->velocity = n_p->velocity;
+				n_p->velocity += total_forces_on_particle(p) * delta_t;		//  v(t-1) + a(t)*t
+				n_p->position += n_p->velocity*delta_t; 					//  p(t-1) + v(t)*t
 			}
+
+
+			// Swap both particle buffers
+			particle_t* last_frame_data = particles;
+			particles = new_particles;
+			new_particles = last_frame_data;
 
 			domain.last_update = std::chrono::system_clock::now();
 		}
