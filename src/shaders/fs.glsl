@@ -4,6 +4,8 @@ in vec2 fs_uv;
 in vec2 velocity;
 
 uniform vec2 domain_size;
+uniform vec2 window_size;
+uniform float particle_radius;
 
 out vec4 col;
 
@@ -14,6 +16,22 @@ float sdSegment( in vec2 p, in vec2 a, in vec2 b )
     vec2 pa = p-a, ba = b-a;
     float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
     return length( pa - ba*h );
+}
+
+vec3 hsv_to_rgb(float h, float s, float v)
+{
+    float c = s*v;
+    float x = c * (1. - abs(mod(h / 60., 2.) - 1.));
+    h = mod(h, 360.);
+    
+    vec3 rgb = vec3(c, x, 0.);
+    
+    if(0. <= h && h <= 60.   ) return rgb.rgb;
+    if(60. <= h && h <= 120. ) return rgb.grb;
+    if(120. <= h && h <= 180.) return rgb.brg;
+    if(180. <= h && h <= 240.) return rgb.bgr;
+    if(240. <= h && h <= 300.) return rgb.gbr;
+    if(300. <= h && h <= 360.) return rgb.rbg;
 }
 
 float velocity_arrow_dist(vec2 uv, vec2 velocity, float max_vel)
@@ -33,24 +51,25 @@ float velocity_arrow_dist(vec2 uv, vec2 velocity, float max_vel)
 
 void main()
 {
-	float aspect_ratio = domain_size.x / domain_size.y;
+	float radius = length(fs_uv);
 
-	float pyth = fs_uv.x*fs_uv.x + fs_uv.y*fs_uv.y*aspect_ratio;
+	if(radius > particle_radius) discard;
 
-	if(pyth > 1.) discard;
-
-	if(pyth > .9) col = vec4(1., 0., 0., 1.);
+	if(radius > .9) col = vec4(1., 0., 0., 1.);
 	else col = vec4(1.);
 
 	float vel = length(velocity);
-	float uv_dist = length(fs_uv);
 
 	vec2 vel_dir = velocity/vel;
-	vec2 uv_dir = fs_uv/uv_dist;
+	vec2 uv_dir = fs_uv/radius;
 
 	// What velocity a pix with uv_dist of 1 will represent
 	float max_vel = 10.;
 
-	if(velocity_arrow_dist(fs_uv, velocity, max_vel) < vel/max_vel * 0.1) col = vec4(0., 1., 0., 1.);
-	//if(velocity_arrow_dist(fs_uv, velocity, max_vel) < 0.05) col = vec4(0., 1., 0., 1.);
+	// Color the arrow with gradient based on velocity
+	if(velocity_arrow_dist(fs_uv, velocity, max_vel) < vel/max_vel * 0.1)
+		col = vec4(
+				vec3(0., 0., 1.)*(1.-vel/max_vel) +
+				vec3(1., 0., 0.)*vel/max_vel, 
+		1.);
 }

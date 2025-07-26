@@ -9,7 +9,6 @@
 
 using namespace glm;
 
-#define p_radius 1.
 struct particle_t
 {
 	vec2 position = vec2(0., 0.);
@@ -31,6 +30,7 @@ class Simulation
 	//private:
 	public:
 		int n_particles;
+		float p_radius = 1.;
 		particle_t *particles;
 		particle_t *new_particles;
 		domain_t domain;
@@ -68,7 +68,7 @@ class Simulation
 					int i = y*n_x + x;
 
 					particles[i].position = vec2(x*delta_x, y*delta_y) + vec2(domain.size.x * (1.-rect_size), domain.size.y * (1.-rect_size));
-					particles[i].velocity = particles[i].position - vec2(domain.size.x / 2., 0.);
+					particles[i].velocity = vec2(particles[i].position.x - domain.size.x / 2., particles[i].position.y - domain.size.y/2.);
 				}
 			}
 
@@ -79,7 +79,7 @@ class Simulation
 				int i = n_y*n_x + x;
 
 				particles[i].position = vec2(x*delta_x, (n_y-1)*delta_y) + vec2(domain.size.x * (1.-rect_size), domain.size.y * (1.-rect_size));
-				particles[i].velocity = particles[i].position - vec2(domain.size.x / 2., 0.);
+				particles[i].velocity = vec2(particles[i].position.x - domain.size.x / 2., particles[i].position.y - domain.size.y/2.);
 			}
 		}
 
@@ -137,7 +137,10 @@ class Simulation
 					float dot_a_vel_normal = dot(-A->velocity, normal);
 					vec2 a_newdir = A->velocity + vec2(normal.x * 2. * dot_a_vel_normal, normal.y * 2. * dot_a_vel_normal);
 
-					A->velocity = vec2(a_newdir.x * particles_bounciness, a_newdir.y * particles_bounciness);
+					A->velocity = vec2(
+							a_newdir.x * particles_bounciness,
+							a_newdir.y * particles_bounciness
+					);
 					A->position = a_newpos;
 				}
 			}

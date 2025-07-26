@@ -17,8 +17,11 @@ class Render
 		unsigned int vao_2;
 		unsigned int vbo;
 		unsigned int ebo;
+
 		Shader* shaders;
+
 		GLFWwindow* window;
+		int win_x, win_y;
 
 		float tri[8] = 
 		{
@@ -39,6 +42,8 @@ class Render
 		Simulation* simulation;
 
 	public:
+		float zoom = 1.;
+
 		Render(GLFWwindow* win, Simulation* sim)
 		{
 			this->simulation = sim;
@@ -98,9 +103,18 @@ class Render
 
 			shaders->use();
 
-			shaders->setVec2("domain_size",
-					this->simulation->domain.size.x,
-					this->simulation->domain.size.y
+			glfwGetWindowSize(this->window, &win_x, &win_y);
+			shaders->setVec2(
+					"window_size",
+					(float)this->win_x, (float)this->win_y
+			);
+
+			shaders->setFloat("particle_radius",
+					this->simulation->p_radius
+			);
+
+			shaders->setFloat("zoom",
+					this->zoom
 			);
 
 			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, simulation->n_particles);
