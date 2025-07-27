@@ -22,7 +22,7 @@ struct domain_t
 	bool radial_gravity = false;
 	vec2 gravity = vec2(0., -9.81);
 	float bounciness = .9;
-	std::chrono::time_point<std::chrono::system_clock> last_update = std::chrono::system_clock::now();
+	std::chrono::time_point<std::chrono::high_resolution_clock> last_update = std::chrono::high_resolution_clock::now();
 };
 
 class Simulation
@@ -35,51 +35,39 @@ class Simulation
 		particle_t *new_particles;
 		domain_t domain;
 		float speed = 1.;
+		//std::chrono::duration<long int, std::ratio<1, 1000000000> > last_delta_t = std::chrono::milliseconds(0);
 		float last_delta_t = 0.;
 
 		float particles_bounciness = .9;
 
 		void spawn_particles_as_rect()
 		{
+			float side_length = ceil(sqrt(n_particles));
+			float dx = domain.size.x/side_length;
+			float dy = domain.size.y/side_length;
+
+			std::cout << "N_particles: " << this->n_particles << std::endl;
+
 			for(int i = 0; i < n_particles; i++)
 			{
-				particles[i] = particle_t();
-			}
+				particle_t* p = &particles[i];
 
-			float side_length = sqrt(n_particles);
+				*p = particle_t();
 
-			// aspect_ratio*side_length to deform the square of coordinates
-			int n_x = floor(sqrt(n_particles)* (domain.size.x / domain.size.y));
+				p->position = vec2(
+					mod((float)i, side_length) * dx,
+					(int)(i / side_length) * dy
+				);
 
-			int n_y = floor(n_particles/n_x);
 
-			// Number of particles in last row in case not a perfect square
-			int n_x_last_row = mod((float)n_particles, (float)n_x);
-			
-			float rect_size = 0.9;
-			float delta_x = domain.size.x / n_x * rect_size;
-			float delta_y = domain.size.y / (n_y+1.) * rect_size;
+				p->velocity = vec2(
+						p->position.x - domain.size.x / 2.,
+						p->position.y - domain.size.y / 2.
+				);
 
-			// Generate a complete rectangle of particles
-			for(int y = 0; y < n_y; y++)
-			{
-				for(int x = 0; x < n_x; x++)
-				{
-					int i = y*n_x + x;
+				p->mass = 1.;
 
-					particles[i].position = vec2(x*delta_x, y*delta_y) + vec2(domain.size.x * (1.-rect_size), domain.size.y * (1.-rect_size));
-					particles[i].velocity = vec2(particles[i].position.x - domain.size.x / 2., particles[i].position.y - domain.size.y/2.);
-				}
-			}
-
-			// If the number of particles doens't have a perfect square root,
-			// add an incomplete last row to rectangle
-			for(int x = 0; x < n_x_last_row; x++)
-			{
-				int i = n_y*n_x + x;
-
-				particles[i].position = vec2(x*delta_x, (n_y-1)*delta_y) + vec2(domain.size.x * (1.-rect_size), domain.size.y * (1.-rect_size));
-				particles[i].velocity = vec2(particles[i].position.x - domain.size.x / 2., particles[i].position.y - domain.size.y/2.);
+				new_particles[i] = particles[i];
 			}
 		}
 
@@ -90,6 +78,8 @@ class Simulation
 				vec2 to_center = vec2(domain.size.x / 2., domain.size.y / 2.) - p->position;
 				float distance = glm::length(to_center);
 				float gravity_norm = glm::length(domain.gravity);
+
+				if(distance == 0.) distance = 0.01;
 
 				to_center.x *= gravity_norm / distance;
 				to_center.y *= gravity_norm / distance;
@@ -118,6 +108,7 @@ class Simulation
 				vec2 normal = A->position - B->position;
 
 				float dist = glm::length(normal);
+				if(dist == 0.) dist = 0.01;
 
 				// Normalize
 				normal /= dist;
@@ -125,22 +116,16 @@ class Simulation
 				// Collision happens
 				if(dist < 2.*p_radius)
 				{
-					//std::cout << "Collision between " << i << " and " << p_i << " at dist " << dist << std::endl;
+					vec2 relative_vel = B->velocity - A->velocity;
+
+					// Bounce direction
+					vec2 a_newdir = A->velocity + normal*dot(relative_vel, normal);
+
+					// Dampen the bounce
+					A->velocity = a_newdir*particles_bounciness;
 
 					// A is inside B's radius, move it out
-					vec2 a_newpos = A->position + vec2(-normal.x * (dist - 2.*p_radius), -normal.y * (dist - 2.*p_radius));
-
-					// dir = vel + 2*normal*dot(-vel, normal)
-					// Symmetrize (is that a word ?) the velocity vector
-					// from the normal vector (-vel because they face
-					// opposite from each other)
-					float dot_a_vel_normal = dot(-A->velocity, normal);
-					vec2 a_newdir = A->velocity + vec2(normal.x * 2. * dot_a_vel_normal, normal.y * 2. * dot_a_vel_normal);
-
-					A->velocity = vec2(
-							a_newdir.x * particles_bounciness,
-							a_newdir.y * particles_bounciness
-					);
+					vec2 a_newpos = A->position - normal * (dist - 2.f*p_radius);
 					A->position = a_newpos;
 				}
 			}
@@ -178,7 +163,7 @@ class Simulation
 		Simulation(int n_particles, vec2 domain_size)
 		{
 			// Allocate needed space for particles
-			this->particles = (particle_t*)malloc(sizeof(particle_t)*n_particles);
+			this->particles 	= (particle_t*)malloc(sizeof(particle_t)*n_particles);
 			this->new_particles = (particle_t*)malloc(sizeof(particle_t)*n_particles);
 			this->n_particles = n_particles;
 
@@ -190,7 +175,7 @@ class Simulation
 		void tick()
 		{
 			// One weird bug, delta_t increases dramatically when the mouse goes over the top window bar
-			float delta_t = (std::chrono::system_clock::now() - domain.last_update).count() / 1e9f;
+			float delta_t = std::chrono::duration(std::chrono::high_resolution_clock::now() - domain.last_update).count() / 1.e9;
 			last_delta_t = delta_t;
 			delta_t *= speed;
 
@@ -223,16 +208,15 @@ class Simulation
 				domain_boundaries(n_p);
 
 				n_p->velocity += total_forces_on_particle(p) * delta_t;		//  v(t-1) + a(t)*t
-				n_p->position += n_p->velocity*delta_t; 					//  p(t-1) + v(t)*t
+				n_p->position += n_p->velocity * delta_t; 					//  p(t-1) + v(t)*t
 			}
-
 
 			// Swap both particle buffers
 			particle_t* last_frame_data = particles;
 			particles = new_particles;
 			new_particles = last_frame_data;
 
-			domain.last_update = std::chrono::system_clock::now();
+			domain.last_update = std::chrono::high_resolution_clock::now();
 		}
 
 		~Simulation()
