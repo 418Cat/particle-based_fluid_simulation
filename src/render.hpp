@@ -21,7 +21,6 @@ class Render
 		Shader* shaders;
 
 		GLFWwindow* window;
-		int win_x, win_y;
 
 		float tri[8] = 
 		{
@@ -43,6 +42,8 @@ class Render
 
 	public:
 		float zoom = 1.;
+		int win_x, win_y;
+		float arrow_max_vel = 20.;
 
 		Render(GLFWwindow* win, Simulation* sim)
 		{
@@ -117,6 +118,10 @@ class Render
 					this->zoom
 			);
 
+			shaders->setFloat("arrow_max_vel",
+					this->arrow_max_vel
+			);
+
 			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, simulation->n_particles);
 		}
 
@@ -124,7 +129,6 @@ class Render
 		{
 			//free(shaders);
 		}
-
 };
 
 #endif

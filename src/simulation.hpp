@@ -5,6 +5,7 @@
 #include "glm.hpp"
 
 #include <chrono>
+#include <thread>
 #include <iostream>
 
 using namespace glm;
@@ -27,7 +28,9 @@ struct domain_t
 
 class Simulation
 {
-	//private:
+	private:
+		std::thread t;
+
 	public:
 		int n_particles;
 		float p_radius = 1.;
@@ -37,6 +40,7 @@ class Simulation
 		float speed = 1.;
 		//std::chrono::duration<long int, std::ratio<1, 1000000000> > last_delta_t = std::chrono::milliseconds(0);
 		float last_delta_t = 0.;
+		unsigned int n_threads = 5;
 
 		float particles_bounciness = .9;
 
@@ -174,54 +178,78 @@ class Simulation
 
 		void tick()
 		{
-			// One weird bug, delta_t increases dramatically when the mouse goes over the top window bar
-			float delta_t = std::chrono::duration(std::chrono::high_resolution_clock::now() - domain.last_update).count() / 1.e9;
-			last_delta_t = delta_t;
-			delta_t *= speed;
+			if(t.joinable()) t.join();
 
-			for(int p_i = 0; p_i < n_particles; p_i++)
+			t = std::thread([this]()
 			{
-				particle_t* n_p = &new_particles[p_i];
-				particle_t* p = &particles[p_i];
+				auto now = std::chrono::high_resolution_clock::now();
 
-				n_p->position = p->position;
-				n_p->velocity = p->velocity;
+				float delta_t = (now - domain.last_update).count() / 1.e9; // count gives nanoseconds
+				last_delta_t = delta_t;
+				delta_t *= speed; // Scale delta_t depending on sim speed
 
-				// Assuming gravity is the only force acting on particles:
-				// The following formula gives the analytic solution to the
-				// particle's position
-				// a(t) = g
-				// v(t) = V0 + g*t
-				// p(t) = P0 + V0*t + g/2*t²
-				//
-				// To take into account force changes and collision, the sim cannot
-				// use the analytic solution, so using the formula above, it gives:
-				// v(t) = v(t-1) + a(t)*t
-				// p(t) = p(t-1) + v(t)*t
-				//
-				// a(t) is known on time but cannot be predicted (without running the sim in advance)
-				// a(t) in the first line and v(t) in the second are treated as if they
-				// are constant in the interval (t, t+1). The higher the tickrate, the 
-				// more accurate the sim will be as this interval will be reduced
+				domain.last_update = now;
 
-				collision_check(n_p, p_i);
-				domain_boundaries(n_p);
+				unsigned int used_threads = n_threads;
+				std::thread ts[used_threads];
 
-				n_p->velocity += total_forces_on_particle(p) * delta_t;		//  v(t-1) + a(t)*t
-				n_p->position += n_p->velocity * delta_t; 					//  p(t-1) + v(t)*t
-			}
+				// Ceil to get every particles in case it's not round
+				int p_per_thread = ceil((float)n_particles/(float)used_threads);
 
-			// Swap both particle buffers
-			particle_t* last_frame_data = particles;
-			particles = new_particles;
-			new_particles = last_frame_data;
+				// For every thread
+				for(int t_i = 0; t_i < used_threads; t_i++) ts[t_i] = std::thread([t_i, p_per_thread, delta_t, this]()
+				{
+					// Iterate on a given list of particles
+					for(int p_i = t_i*p_per_thread; p_i < (t_i+1)*p_per_thread && p_i < n_particles; p_i++)
+					{
+						particle_t* n_p = &new_particles[p_i];
+						particle_t* p = &particles[p_i];
 
-			domain.last_update = std::chrono::high_resolution_clock::now();
+						n_p->position = p->position;
+						n_p->velocity = p->velocity;
+
+						// Assuming gravity is the only force acting on particles:
+						// The following formula gives the analytic solution to the
+						// particle's position
+						// a(t) = g
+						// v(t) = V0 + g*t
+						// p(t) = P0 + V0*t + g/2*t²
+						//
+						// To take into account force changes and collision, the sim cannot
+						// use the analytic solution, so using the formula above, it gives:
+						// v(t) = v(t-1) + a(t)*t
+						// p(t) = p(t-1) + v(t)*t
+						//
+						// a(t) is known on time but cannot be predicted (without running the sim in advance)
+						// a(t) in the first line and v(t) in the second are treated as if they
+						// are constant in the interval (t, t+1). The higher the tickrate, the 
+						// more accurate the sim will be as this interval will be reduced
+
+						collision_check(n_p, p_i);
+						domain_boundaries(n_p);
+
+						n_p->velocity += total_forces_on_particle(p) * delta_t;		//  v(t-1) + a(t)*t
+						n_p->position += n_p->velocity * delta_t; 					//  p(t-1) + v(t)*t
+					}
+				});
+
+				// End threads
+				for(int t_i = 0; t_i < used_threads; t_i++)
+					if(ts[t_i].joinable()) ts[t_i].join();
+
+				// Swap both particle buffers
+				particle_t* last_frame_data = particles;
+				particles = new_particles;
+				new_particles = last_frame_data;
+
+			});
 		}
 
 		~Simulation()
 		{
+			if(t.joinable()) t.join();
 			free(particles);
+			free(new_particles);
 		}
 };
 

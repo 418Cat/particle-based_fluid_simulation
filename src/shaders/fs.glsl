@@ -6,6 +6,7 @@ in vec2 velocity;
 uniform vec2 domain_size;
 uniform vec2 window_size;
 uniform float particle_radius;
+uniform float arrow_max_vel;
 
 out vec4 col;
 
@@ -34,17 +35,17 @@ vec3 hsv_to_rgb(float h, float s, float v)
     if(300. <= h && h <= 360.) return rgb.rbg;
 }
 
-float velocity_arrow_dist(vec2 uv, vec2 velocity, float max_vel)
+float velocity_arrow_dist(vec2 uv, vec2 velocity)
 {
 	float head_width = 0.4;
 	vec2 head_left = (1.-head_width)*velocity + head_width*vec2(-velocity.y, velocity.x);
 	vec2 head_right = (1.-head_width)*velocity - head_width*vec2(-velocity.y, velocity.x);
 
 	return
-		min(sdSegment(uv, vec2(0.), velocity/max_vel),
+		min(sdSegment(uv, vec2(0.), velocity/arrow_max_vel),
 			min(
-				sdSegment(uv, velocity/max_vel, head_left/max_vel),
-				sdSegment(uv, velocity/max_vel, head_right/max_vel)
+				sdSegment(uv, velocity/arrow_max_vel, head_left/arrow_max_vel),
+				sdSegment(uv, velocity/arrow_max_vel, head_right/arrow_max_vel)
 			)
 	);
 }
@@ -63,13 +64,10 @@ void main()
 	vec2 vel_dir = velocity/vel;
 	vec2 uv_dir = fs_uv/radius;
 
-	// What velocity a pix with uv_dist of 1 will represent
-	float max_vel = 10.;
-
 	// Color the arrow with gradient based on velocity
-	if(velocity_arrow_dist(fs_uv, velocity, max_vel) < vel/max_vel * 0.1)
+	if(velocity_arrow_dist(fs_uv, velocity) < vel/arrow_max_vel * 0.1)
 		col = vec4(
-				vec3(0., 0., 1.)*(1.-vel/max_vel) +
-				vec3(1., 0., 0.)*vel/max_vel, 
+				vec3(0., 0., 1.)*(1.-vel/arrow_max_vel) +
+				vec3(1., 0., 0.)*vel/arrow_max_vel, 
 		1.);
 }
