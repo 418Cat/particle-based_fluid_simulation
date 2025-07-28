@@ -19,22 +19,6 @@ float sdSegment( in vec2 p, in vec2 a, in vec2 b )
     return length( pa - ba*h );
 }
 
-vec3 hsv_to_rgb(float h, float s, float v)
-{
-    float c = s*v;
-    float x = c * (1. - abs(mod(h / 60., 2.) - 1.));
-    h = mod(h, 360.);
-    
-    vec3 rgb = vec3(c, x, 0.);
-    
-    if(0. <= h && h <= 60.   ) return rgb.rgb;
-    if(60. <= h && h <= 120. ) return rgb.grb;
-    if(120. <= h && h <= 180.) return rgb.brg;
-    if(180. <= h && h <= 240.) return rgb.bgr;
-    if(240. <= h && h <= 300.) return rgb.gbr;
-    if(300. <= h && h <= 360.) return rgb.rbg;
-}
-
 float velocity_arrow_dist(vec2 uv, vec2 velocity)
 {
 	float head_width = 0.4;
@@ -56,7 +40,7 @@ void main()
 
 	if(radius > particle_radius) discard;
 
-	if(radius > .9) col = vec4(1., 0., 0., 1.);
+	if(radius > .95) col = vec4(1., .3, 0., 1.);
 	else col = vec4(1.);
 
 	float vel = length(velocity);

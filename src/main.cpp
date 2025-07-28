@@ -4,14 +4,15 @@
 #include "render.hpp"
 #include "simulation.hpp"
 #include "fluid_ui.hpp"
+#include <chrono>
 
 int main()
 {
 	FlUId::begin();
 
 	Simulation sim = Simulation(
-		6500,
-		glm::vec2(560., 320.)		
+		2000,
+		glm::vec2(500., 500.)		
 	);
 
 	Render render = Render(FlUId::window, &sim);
@@ -24,7 +25,7 @@ int main()
 	float last_momentum = 0.;
 	float captured_momentum = 0.; // User selected momentum at a certain frame
 
-	bool always_autoresize = false;
+	bool always_autoresize = true;
 
 	bool show_all_particles = false;
 	// ==============================
@@ -32,22 +33,30 @@ int main()
 	// Temp sim settings ============
 	render.zoom = 2.;
 	//sim.domain.radial_gravity = true;
-	sim.speed = 0.;
-	sim.domain.gravity.y = 0.;
-	sim.domain.bounciness = 1.;
-	sim.particles_bounciness = 1.;
+	sim.speed = 1.;
+	sim.domain.bounciness = .9;
+	sim.particles_bounciness = .9;
 	// ===============================
+
+	sim.run();
 
 	while(FlUId::render_start())
 	{
-		render.frame();
-
 		ImGui::BeginTabBar("Debug tab bar");
 
 		if(ImGui::BeginTabItem("Settings"))
 		{
 			ImGui::SeparatorText("Simulation");
+			if(ImGui::Button("Pause") && sim.should_run) sim.should_run = false;
+			ImGui::SameLine();
+			if(ImGui::Button("Resume") && !sim.should_run)
+			{
+				sim.domain.last_update = std::chrono::high_resolution_clock::now();
+				sim.run();
+			}
+
 			ImGui::SliderFloat("Sim speed", &sim.speed, 0., 2.);
+			ImGui::SliderInt("Sim rate", (int*)&sim.sim_hertz, 1, 10000, "%d Hz");
 			ImGui::SliderInt("Number of threads", (int*)&sim.n_threads, 1, max_threads);
 
 			ImGui::Spacing();
@@ -84,7 +93,14 @@ int main()
 		if(ImGui::BeginTabItem("Info"))
 		{
 			ImGui::Text("Number of particles: %d", sim.n_particles);
-			ImGui::Text("Simulation time: %d", 1);
+
+			ImGui::Separator();
+			ImGui::Text("Sim time: %.1f µs", sim.last_delta_t*1.e6);
+			ImGui::Text("Sim goal time: %.1f µs", 1.e6 / (float)sim.sim_hertz);
+			ImGui::Text("Performance:");
+			ImGui::ProgressBar(1./ (sim.last_delta_t * (float)sim.sim_hertz));
+
+			ImGui::Separator();
 
 			ImGui::Checkbox("Compute momentum", &compute_momentum);
 			if(compute_momentum)
@@ -150,16 +166,16 @@ int main()
 				ImGui::EndTable();
 			}
 
-			ImGui::Text("Frametime: %.1f ms", sim.last_delta_t*1000.);
-
 			ImGui::EndTabItem();
 		}
 
 		ImGui::EndTabBar();
 
+		render.frame();
 		FlUId::render_stop();
-		sim.tick();
 	}
+
+	std::cout << "Exiting" << std::endl;
 
 	return FlUId::end();
 }
