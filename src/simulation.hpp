@@ -31,16 +31,18 @@ class Simulation
 	private:
 		std::thread t;
 		unsigned int iteration = 0;
+		particle_t *new_particles;
 
 	public:
-		int n_particles;
-		float p_radius = 1.;
 		particle_t *particles;
-		particle_t *new_particles;
 		domain_t domain;
-		float speed = 1.;
-		//std::chrono::duration<long int, std::ratio<1, 1000000000> > last_delta_t = std::chrono::milliseconds(0);
+
 		float last_delta_t = 0.;
+		int n_particles;
+
+		float p_radius = 1.;
+		float speed = 1.;
+
 		unsigned int n_threads = 4;
 		unsigned int sim_hertz = 300;
 		bool should_run = true;
@@ -141,27 +143,27 @@ class Simulation
 		void domain_boundaries(particle_t* p)
 		{
 			// Floor & Ceiling
-			if(p->position.y < 1.)
+			if(p->position.y < p_radius)
 			{
 				p->velocity.y = -p->velocity.y * domain.bounciness;
-				p->position.y = 1.;
+				p->position.y = p_radius;
 			}
-			if(p->position.y > domain.size.y - 1)
+			if(p->position.y > domain.size.y - p_radius)
 			{
 				p->velocity.y = -p->velocity.y * domain.bounciness;
-				p->position.y = domain.size.y - 1.;
+				p->position.y = domain.size.y - p_radius;
 			}
 
 			// Walls
-			if(p->position.x < 1.)
+			if(p->position.x < p_radius)
 			{
 				p->velocity.x = -p->velocity.x * domain.bounciness;
-				p->position.x = 1.;
+				p->position.x = p_radius;
 			}
-			if(p->position.x > domain.size.x - 1.)
+			if(p->position.x > domain.size.x - p_radius)
 			{
 				p->velocity.x = -p->velocity.x * domain.bounciness;
-				p->position.x = domain.size.x - 1.;
+				p->position.x = domain.size.x - p_radius;
 			}
 		}
 

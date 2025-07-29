@@ -66,6 +66,7 @@ int main()
 			ImGui::Spacing();
 			ImGui::SliderFloat("Domain bounciness", &sim.domain.bounciness, 0., 1.5);
 			ImGui::SliderFloat("Particles bounciness", &sim.particles_bounciness, 0., 1.5);
+			ImGui::SliderFloat("Particle radius", &sim.p_radius, 0.01, 20.);
 
 			ImGui::Spacing();
 			ImGui::DragFloat2("Domain size", (float*)&sim.domain.size);

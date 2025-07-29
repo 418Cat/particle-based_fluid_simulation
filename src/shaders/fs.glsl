@@ -38,7 +38,7 @@ void main()
 {
 	float radius = length(fs_uv);
 
-	if(radius > particle_radius) discard;
+	if(radius > 1.) discard;
 
 	if(radius > .95) col = vec4(1., .3, 0., 1.);
 	else col = vec4(1.);

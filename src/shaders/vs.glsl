@@ -16,8 +16,7 @@ void main()
 	gl_Position = vec4(
 		zoom*
 		(
-			particle_radius	*
-			vs_pos 			+
+			vs_pos*particle_radius	+
 			particle_pos
 		) / window_size *
 		2. - 1.
