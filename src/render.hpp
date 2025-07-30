@@ -43,7 +43,12 @@ class Render
 	public:
 		float zoom = 1.;
 		int win_x, win_y;
+		
+		bool show_vel = false;
 		float arrow_max_vel = 20.;
+
+		bool show_accel = false;
+		float arrow_max_accel = 20.;
 
 		Render(GLFWwindow* win, Simulation* sim)
 		{
@@ -84,6 +89,10 @@ class Render
 			// 3rd attribute is particle velocity
 			glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)sizeof(vec2));
 			glEnableVertexAttribArray(2);
+			
+			// 4th attribute is particle acceleration
+			glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec2)*2));
+			glEnableVertexAttribArray(3);
 
 			std::cout << "GL Buffers generated" << std::endl;
 
@@ -101,6 +110,7 @@ class Render
 			glVertexAttribDivisor(0, 0); // First attribute (Quad mesh) doesn't change
 			glVertexAttribDivisor(1, 1); // Second attribute (Particle pos) changes every 1 instance
 			glVertexAttribDivisor(2, 1); // Third one (velocity) too
+			glVertexAttribDivisor(3, 1); // Acceleration, yes also
 
 			shaders->use();
 
@@ -118,9 +128,11 @@ class Render
 					this->zoom
 			);
 
-			shaders->setFloat("arrow_max_vel",
-					this->arrow_max_vel
-			);
+			shaders->setBool("show_vel", this->show_vel);
+			shaders->setFloat("arrow_max_vel", this->arrow_max_vel);
+
+			shaders->setBool("show_accel", this->show_accel);
+			shaders->setFloat("arrow_max_accel", this->arrow_max_accel);
 
 			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, simulation->n_particles);
 		}

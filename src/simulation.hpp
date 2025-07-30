@@ -1,7 +1,6 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
-#include "geometric.hpp"
 #include "glm.hpp"
 
 #include <chrono>
@@ -14,6 +13,7 @@ struct particle_t
 {
 	vec2 position = vec2(0., 0.);
 	vec2 velocity = vec2(0., 0.);
+	vec2 acceleration = vec2(0., 0.);
 	float mass = 1.;
 };
 
@@ -32,6 +32,8 @@ class Simulation
 		std::thread t;
 		unsigned int iteration = 0;
 		particle_t *new_particles;
+		unsigned int last_n_bounding_boxes_x = 0;
+		unsigned int last_n_bounding_boxes_y = 0;
 
 	public:
 		particle_t *particles;
@@ -48,6 +50,11 @@ class Simulation
 		bool should_run = true;
 
 		float particles_bounciness = .9;
+
+		unsigned int n_bounding_boxes_x = 400;
+		unsigned int n_bounding_boxes_y = 400;
+		particle_t* * * p_per_b; // Flattened 2D array of arrays of pointers to particles
+		int* n_p_per_b; // Flattened 2D array
 
 		void spawn_particles_as_rect()
 		{
@@ -80,62 +87,81 @@ class Simulation
 			}
 		}
 
-		vec2 total_forces_on_particle(particle_t* p)
+		void total_forces_on_particle(particle_t* p)
 		{
 			if(domain.radial_gravity)
 			{
-				vec2 to_center = vec2(domain.size.x / 2., domain.size.y / 2.) - p->position;
+				vec2 to_center = domain.size/2.f - p->position;
+
 				float distance = glm::length(to_center);
 				float gravity_norm = glm::length(domain.gravity);
 
 				if(distance == 0.) distance = 0.01;
+				to_center *= gravity_norm / distance;
 
-				to_center.x *= gravity_norm / distance;
-				to_center.y *= gravity_norm / distance;
-
-				return to_center;
+				p->acceleration += to_center;
+				return;
 			}
 
-			return domain.gravity;
+			p->acceleration += domain.gravity;
 		}
 
-		void collision_check(particle_t* A, int i)
+		void collision_check(particle_t* A, particle_t* old_A)
 		{
-			for(int p_i = 0; p_i < n_particles; p_i++)
+			// Position in bouding boxes
+			int A_x = (int)floor(A->position.x/domain.size.x * n_bounding_boxes_x);
+			int A_y = (int)floor(A->position.y/domain.size.y * n_bounding_boxes_y);
+			int A_xy = A_x*n_bounding_boxes_y + A_y;
+
+			int B_x = A_x - 1;
+			if(B_x < 0) B_x = 0;
+			for(;B_x <= A_x+1 && B_x < n_bounding_boxes_x; B_x++)
 			{
-				if(i == p_i) continue;
 
-				particle_t* B = &particles[p_i];
-
-				// Early continue with cheap test
-				float delta_x = A->position.x - B->position.x;
-				float delta_y = A->position.y - B->position.y;
-				if(delta_x > 2.*p_radius || delta_x < -2.*p_radius || delta_y > 2.*p_radius || delta_y < -2.*p_radius) continue;
-
-				// Vector going from B's center to A's center,
-				// normal to the surface of both
-				vec2 normal = A->position - B->position;
-
-				float dist = glm::length(normal);
-				if(dist == 0.) dist = 0.01;
-
-				// Normalize
-				normal /= dist;
-				
-				// Collision happens
-				if(dist < 2.*p_radius)
+				int B_y = A_y - 1;
+				if(B_y < 0) B_y = 0;
+				for(;B_y <= A_y+1 && B_y < n_bounding_boxes_y; B_y++)
 				{
-					vec2 relative_vel = B->velocity - A->velocity;
+					int B_xy = B_x*n_bounding_boxes_y + B_y;
+					for(int p_i = 0; p_i < n_p_per_b[B_xy]; p_i++)
+					{
+						particle_t* B = p_per_b[B_xy][p_i];
 
-					// Bounce direction
-					vec2 a_newdir = A->velocity + normal*dot(relative_vel, normal);
+						// Early continue with cheap test
+						float delta_x = A->position.x - B->position.x;
+						float delta_y = A->position.y - B->position.y;
+						if(delta_x > 2.*p_radius || delta_x < -2.*p_radius || delta_y > 2.*p_radius || delta_y < -2.*p_radius) continue;
 
-					// Dampen the bounce
-					A->velocity = a_newdir*particles_bounciness;
+						// Continue if the test is with itself
+						if(B == old_A) continue;
 
-					// A is inside B's radius, move it out
-					vec2 a_newpos = A->position - normal * (dist - 2.f*p_radius);
-					A->position = a_newpos;
+						
+						// Vector going from B's center to A's center,
+						// normal to the surface of both
+						vec2 normal = A->position - B->position;
+
+						float dist = glm::length(normal);
+						if(dist == 0.) dist = 0.01;
+
+						// Normalize
+						normal /= dist;
+						
+						// Collision happens
+						if(dist < 2.*p_radius)
+						{
+							vec2 relative_vel = B->velocity - A->velocity;
+
+							// Bounce direction
+							vec2 a_newdir = A->velocity + normal*dot(relative_vel, normal);
+
+							// Dampen the bounce
+							A->velocity = a_newdir*particles_bounciness;
+
+							// A is inside B's radius, move it out
+							vec2 a_newpos = A->position - normal * (dist - 2.f * p_radius);
+							A->position = a_newpos;
+						}
+					}
 				}
 			}
 		}
@@ -145,11 +171,16 @@ class Simulation
 			// Floor & Ceiling
 			if(p->position.y < p_radius)
 			{
+				// Equal and opposite reaction blablabla
+				if(p->acceleration.y < 0.) p->acceleration.y = 0.;
+
 				p->velocity.y = -p->velocity.y * domain.bounciness;
 				p->position.y = p_radius;
 			}
 			if(p->position.y > domain.size.y - p_radius)
 			{
+				if(p->acceleration.y > 0.) p->acceleration.y = 0.;
+
 				p->velocity.y = -p->velocity.y * domain.bounciness;
 				p->position.y = domain.size.y - p_radius;
 			}
@@ -157,11 +188,15 @@ class Simulation
 			// Walls
 			if(p->position.x < p_radius)
 			{
+				if(p->acceleration.x < 0.) p->acceleration.x = 0.;
+
 				p->velocity.x = -p->velocity.x * domain.bounciness;
 				p->position.x = p_radius;
 			}
 			if(p->position.x > domain.size.x - p_radius)
 			{
+				if(p->acceleration.x > 0.) p->acceleration.x = 0.;
+
 				p->velocity.x = -p->velocity.x * domain.bounciness;
 				p->position.x = domain.size.x - p_radius;
 			}
@@ -186,7 +221,7 @@ class Simulation
 			if(t.joinable())
 			{
 				// Stop infinite loop
-				if(should_run) should_run = false;
+				should_run = false;
 				t.join();
 			}
 
@@ -206,6 +241,73 @@ class Simulation
 			});
 		}
 
+		void end()
+		{
+			should_run = false;
+			if(t.joinable()) t.join();
+		}
+
+		void build_bounding_boxes()
+		{
+			bool has_changed = last_n_bounding_boxes_x != n_bounding_boxes_x || last_n_bounding_boxes_y != n_bounding_boxes_y;
+
+			// Realloc space because bounding boxes sizes have changed
+			if(has_changed)
+			{
+				n_p_per_b = (int*)realloc(n_p_per_b, sizeof(int)*n_bounding_boxes_x*n_bounding_boxes_y);
+				p_per_b = (particle_t***)realloc(p_per_b, sizeof(particle_t**)*n_bounding_boxes_x*n_bounding_boxes_y);
+			}
+
+			// Assigning all 0s to 2D array containing the number
+			// of particles per bouding box
+			for(int i = 0; i < n_bounding_boxes_x*n_bounding_boxes_y; i++)
+				n_p_per_b[i] = 0;
+
+
+			// Counting number of particles per box
+			for(int p_i = 0; p_i < n_particles; p_i++)
+			{
+				particle_t* p = &particles[p_i];
+
+				int x = (int)floor(p->position.x/domain.size.x * n_bounding_boxes_x);
+				int y = (int)floor(p->position.y/domain.size.y * n_bounding_boxes_y);
+
+				// Some particles might be leaking out of the domain
+				if(x < 0 || y < 0 || x > n_bounding_boxes_x-1 || y > n_bounding_boxes_y-1) continue;
+
+				n_p_per_b[x*n_bounding_boxes_y + y]++;
+			}
+
+			// Alloc space needed in list of particles per bounding box
+			for(int i = 0; i < n_bounding_boxes_x*n_bounding_boxes_y; i++)
+				p_per_b[i] = (particle_t**)realloc(p_per_b[i], sizeof(particle_t*)*n_p_per_b[i]);
+
+			// Incremental list, counting current index of particle when inserting
+			// (see loop with p_i below)
+			unsigned int n_p_per_b_again[n_bounding_boxes_x*n_bounding_boxes_y];
+
+			// Assign all 0s to incremental list of numbers
+			for(int i = 0; i < n_bounding_boxes_x*n_bounding_boxes_y; i++)
+				n_p_per_b_again[i] = 0;
+
+			// Insert pointers to particles in bounding boxes
+			for(int p_i = 0; p_i < n_particles; p_i++)
+			{
+				particle_t* p = &particles[p_i];
+
+				unsigned int p_x = (int)floor(p->position.x/domain.size.x * n_bounding_boxes_x);
+				unsigned int p_y = (int)floor(p->position.y/domain.size.y * n_bounding_boxes_y);
+				unsigned int p_xy = p_x*n_bounding_boxes_y + p_y;
+
+				if(p_x < 0 || p_y < 0 || p_x > n_bounding_boxes_x-1 || p_y > n_bounding_boxes_y-1) continue;
+
+				p_per_b[p_xy][n_p_per_b_again[p_xy]] = p;
+
+				// Count current particle index in bounding box
+				n_p_per_b_again[p_xy]++;
+			}
+		}
+
 		void tick()
 		{
 			auto now = std::chrono::high_resolution_clock::now();
@@ -215,6 +317,8 @@ class Simulation
 			delta_t *= speed; // Scale delta_t depending on sim speed
 
 			domain.last_update = now;
+
+			build_bounding_boxes();
 
 			// Saved number of used threads to leave none behind when cleaning up
 			unsigned int used_threads = n_threads;
@@ -243,8 +347,10 @@ class Simulation
 					particle_t* n_p = &new_particles[i];
 					particle_t* p = &particles[i];
 
+					n_p->mass = p->mass;
 					n_p->position = p->position;
 					n_p->velocity = p->velocity;
+					n_p->acceleration = vec2(0., 0.); // Reset acceleration each frame
 
 					// Assuming gravity is the only force acting on particles:
 					// The following formula gives the analytic solution to the
@@ -263,10 +369,11 @@ class Simulation
 					// are constant in the interval (t, t+1). The higher the tickrate, the 
 					// more accurate the sim will be as this interval will be reduced
 
-					collision_check(n_p, i);
+					collision_check(n_p, p);
+					total_forces_on_particle(n_p);
 					domain_boundaries(n_p);
 
-					n_p->velocity += total_forces_on_particle(p) * delta_t;		//  v(t-1) + a(t)*t
+					n_p->velocity += n_p->acceleration * delta_t;		//  v(t-1) + a(t)*t
 					n_p->position += n_p->velocity * delta_t; 					//  p(t-1) + v(t)*t
 				}
 			});
@@ -290,6 +397,12 @@ class Simulation
 				should_run = false;
 				t.join();
 			}
+
+			for(int i = 0; i < n_bounding_boxes_x*n_bounding_boxes_y; i++)
+			{
+					free(p_per_b[i]);
+			}
+			free(n_p_per_b);
 
 			free(particles);
 			free(new_particles);
