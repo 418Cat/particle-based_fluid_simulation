@@ -11,7 +11,7 @@ int main()
 	FlUId::begin();
 
 	Simulation sim = Simulation(
-		8000,
+		1000,
 		glm::vec2(800., 800.)		
 	);
 
@@ -82,9 +82,10 @@ int main()
 
 			if(ImGui::Button("Reset particles"))
 			{
+				bool was_running = sim.should_run;
 				sim.end();
 				sim.spawn_particles_as_rect();
-				sim.run();
+				if(was_running) sim.run();
 			}
 
 			ImGui::SeparatorText("Display");

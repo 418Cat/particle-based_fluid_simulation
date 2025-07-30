@@ -13,12 +13,17 @@
 class Render
 {
 	private:
-		unsigned int vao_1;
-		unsigned int vao_2;
-		unsigned int vbo;
-		unsigned int ebo;
+		unsigned int particles_vao;
+		unsigned int particles_ebo;
+		unsigned int particles_vbo;
+		unsigned int particles_positions_vbo;
 
-		Shader* shaders;
+		unsigned int domain_vao;
+		unsigned int domain_ebo;
+		unsigned int domain_vbo;
+
+		Shader* particles_shaders;
+		Shader* domain_shaders;
 
 		GLFWwindow* window;
 
@@ -36,8 +41,6 @@ class Render
 			1, 2, 3
 		};
 
-		unsigned int positions_vbo;
-
 		Simulation* simulation;
 
 	public:
@@ -52,6 +55,7 @@ class Render
 
 		Render(GLFWwindow* win, Simulation* sim)
 		{
+			std::cout << "\n=============== Starting OpenGL init" << std::endl;
 			this->simulation = sim;
 
 			if(!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -59,19 +63,90 @@ class Render
 			else
 				std::cout << "Loaded Glad correctly" << std::endl;
 
+			setup_particles();
+			setup_domain();
+
 			this->window = win;
 
-			glGenVertexArrays(1, &vao_1);
-			glGenBuffers(1, &vbo);
-			glGenBuffers(1, &ebo);
-			glGenBuffers(1, &positions_vbo);
+			std::cout << "=============== OpenGL init finished\n" << std::endl;
+		}
 
-			glBindVertexArray(vao_1);
+		void frame()
+		{
+			glfwGetWindowSize(this->window, &win_x, &win_y);
 
-			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			draw_domain();
+			draw_particles();
+		}
+
+		void setup_domain()
+		{
+			glGenVertexArrays(1, &domain_vao);
+			glGenBuffers(1, &domain_vbo);
+			glGenBuffers(1, &domain_ebo);
+
+			glBindVertexArray(domain_vao);
+
+			glBindBuffer(GL_ARRAY_BUFFER, domain_vbo);
 			glBufferData(GL_ARRAY_BUFFER, sizeof(tri), tri, GL_STATIC_DRAW);
 
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, domain_ebo);
+			glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+			// First attribute is the vertex's position for the plane
+			glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+			glEnableVertexAttribArray(0);
+
+			std::cout << "Domain GL Buffers generated" << std::endl;
+
+			const char* domain_vs_path = "shaders/domain/vs.glsl";
+			const char* domain_fs_path = "shaders/domain/fs.glsl";
+			domain_shaders = new Shader(domain_vs_path, domain_fs_path);
+
+			std::cout << "Domain shaders set" << std::endl;
+		}
+
+		void draw_domain()
+		{
+			glBindVertexArray(domain_vao);
+
+			domain_shaders->use();
+
+			domain_shaders->setVec2("domain_size",
+					simulation->domain.size.x,
+					simulation->domain.size.y
+			);
+
+			domain_shaders->setVec2("window_size",
+					win_x,
+					win_y
+			);
+
+			domain_shaders->setVec2("n_bounding_boxes",
+					simulation->n_bounding_boxes_x,
+					simulation->n_bounding_boxes_y
+			);
+
+			domain_shaders->setFloat("zoom",
+					this->zoom
+			);
+
+			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+		}
+
+		void setup_particles()
+		{
+			glGenVertexArrays(1, &particles_vao);
+			glGenBuffers(1, &particles_vbo);
+			glGenBuffers(1, &particles_ebo);
+			glGenBuffers(1, &particles_positions_vbo);
+
+			glBindVertexArray(particles_vao);
+
+			glBindBuffer(GL_ARRAY_BUFFER, particles_vbo);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(tri), tri, GL_STATIC_DRAW);
+
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, particles_ebo);
 			glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
 			// First attribute is the vertex's position for the plane
@@ -79,7 +154,7 @@ class Render
 			glEnableVertexAttribArray(0);
 
 			// Declare position buffer
-			glBindBuffer(GL_ARRAY_BUFFER, positions_vbo);
+			glBindBuffer(GL_ARRAY_BUFFER, particles_positions_vbo);
 			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles*sizeof(particle_t), NULL, GL_DYNAMIC_DRAW);
 			
 			// 2nd attribute is position
@@ -94,17 +169,19 @@ class Render
 			glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec2)*2));
 			glEnableVertexAttribArray(3);
 
-			std::cout << "GL Buffers generated" << std::endl;
+			std::cout << "Particles GL Buffers generated" << std::endl;
 
-			const char* vs_path = "shaders/vs.glsl";
-			const char* fs_path = "shaders/fs.glsl";
-			shaders = new Shader(vs_path, fs_path);
+			const char* particles_vs_path = "shaders/particles/vs.glsl";
+			const char* particles_fs_path = "shaders/particles/fs.glsl";
+			particles_shaders = new Shader(particles_vs_path, particles_fs_path);
+
+			std::cout << "Particles shaders set" << std::endl;
 		}
 
-		void frame()
+		void draw_particles()
 		{
-			glBindVertexArray(vao_1);
-			glBindBuffer(GL_ARRAY_BUFFER, positions_vbo);
+			glBindVertexArray(particles_vao);
+			glBindBuffer(GL_ARRAY_BUFFER, particles_positions_vbo);
 			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles*sizeof(particle_t), simulation->particles, GL_DYNAMIC_DRAW);
 
 			glVertexAttribDivisor(0, 0); // First attribute (Quad mesh) doesn't change
@@ -112,27 +189,26 @@ class Render
 			glVertexAttribDivisor(2, 1); // Third one (velocity) too
 			glVertexAttribDivisor(3, 1); // Acceleration, yes also
 
-			shaders->use();
+			particles_shaders->use();
 
-			glfwGetWindowSize(this->window, &win_x, &win_y);
-			shaders->setVec2(
+			particles_shaders->setVec2(
 					"window_size",
 					(float)this->win_x, (float)this->win_y
 			);
 
-			shaders->setFloat("particle_radius",
+			particles_shaders->setFloat("particle_radius",
 					this->simulation->p_radius
 			);
 
-			shaders->setFloat("zoom",
+			particles_shaders->setFloat("zoom",
 					this->zoom
 			);
 
-			shaders->setBool("show_vel", this->show_vel);
-			shaders->setFloat("arrow_max_vel", this->arrow_max_vel);
+			particles_shaders->setBool("show_vel", this->show_vel);
+			particles_shaders->setFloat("arrow_max_vel", this->arrow_max_vel);
 
-			shaders->setBool("show_accel", this->show_accel);
-			shaders->setFloat("arrow_max_accel", this->arrow_max_accel);
+			particles_shaders->setBool("show_accel", this->show_accel);
+			particles_shaders->setFloat("arrow_max_accel", this->arrow_max_accel);
 
 			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, simulation->n_particles);
 		}

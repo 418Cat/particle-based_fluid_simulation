@@ -32,8 +32,8 @@ class Simulation
 		std::thread t;
 		unsigned int iteration = 0;
 		particle_t *new_particles;
-		unsigned int last_n_bounding_boxes_x = 0;
-		unsigned int last_n_bounding_boxes_y = 0;
+		unsigned int nbx = 0;
+		unsigned int nby = 0;
 
 	public:
 		particle_t *particles;
@@ -51,8 +51,8 @@ class Simulation
 
 		float particles_bounciness = .9;
 
-		unsigned int n_bounding_boxes_x = 400;
-		unsigned int n_bounding_boxes_y = 400;
+		unsigned int n_bounding_boxes_x = 40;
+		unsigned int n_bounding_boxes_y = 40;
 		particle_t* * * p_per_b; // Flattened 2D array of arrays of pointers to particles
 		int* n_p_per_b; // Flattened 2D array
 
@@ -108,21 +108,21 @@ class Simulation
 
 		void collision_check(particle_t* A, particle_t* old_A)
 		{
-			// Position in bouding boxes
-			int A_x = (int)floor(A->position.x/domain.size.x * n_bounding_boxes_x);
-			int A_y = (int)floor(A->position.y/domain.size.y * n_bounding_boxes_y);
-			int A_xy = A_x*n_bounding_boxes_y + A_y;
+			// Position in bounding boxes
+			int A_x = (int)floor(A->position.x/domain.size.x * nbx);
+			int A_y = (int)floor(A->position.y/domain.size.y * nby);
+			int A_xy = A_x*nby+ A_y;
 
 			int B_x = A_x - 1;
 			if(B_x < 0) B_x = 0;
-			for(;B_x <= A_x+1 && B_x < n_bounding_boxes_x; B_x++)
+			for(;B_x <= A_x+1 && B_x < nbx; B_x++)
 			{
 
 				int B_y = A_y - 1;
 				if(B_y < 0) B_y = 0;
-				for(;B_y <= A_y+1 && B_y < n_bounding_boxes_y; B_y++)
+				for(;B_y <= A_y+1 && B_y < nby; B_y++)
 				{
-					int B_xy = B_x*n_bounding_boxes_y + B_y;
+					int B_xy = B_x*nby+ B_y;
 					for(int p_i = 0; p_i < n_p_per_b[B_xy]; p_i++)
 					{
 						particle_t* B = p_per_b[B_xy][p_i];
@@ -249,62 +249,64 @@ class Simulation
 
 		void build_bounding_boxes()
 		{
-			bool has_changed = last_n_bounding_boxes_x != n_bounding_boxes_x || last_n_bounding_boxes_y != n_bounding_boxes_y;
+			// Free particles lists before creating new one
+			for(int i = 0; i < nbx*nby; i++) free(p_per_b[i]);
 
-			// Realloc space because bounding boxes sizes have changed
+			bool has_changed = nbx != n_bounding_boxes_x || nby != n_bounding_boxes_y;
+
+			nbx = n_bounding_boxes_x;
+			nby = n_bounding_boxes_y;
+
+			// Realloc space, bounding boxes sizes have changed
 			if(has_changed)
 			{
-				n_p_per_b = (int*)realloc(n_p_per_b, sizeof(int)*n_bounding_boxes_x*n_bounding_boxes_y);
-				p_per_b = (particle_t***)realloc(p_per_b, sizeof(particle_t**)*n_bounding_boxes_x*n_bounding_boxes_y);
+				n_p_per_b = (int*)realloc(n_p_per_b, sizeof(int)*nbx*nby);
+				p_per_b = (particle_t***)realloc(p_per_b, sizeof(particle_t**)*nbx*nby);
 			}
 
+			// Incremental list, counting current index of particle when inserting
+			// (see last loop inserting pointers)
+			unsigned int n_p_per_b_again[nbx*nby];
+
 			// Assigning all 0s to 2D array containing the number
-			// of particles per bouding box
-			for(int i = 0; i < n_bounding_boxes_x*n_bounding_boxes_y; i++)
+			// of particles per bounding box
+			for(int i = 0; i < nbx*nby; i++)
+			{
 				n_p_per_b[i] = 0;
+				n_p_per_b_again[i] = 0;
+			}
 
-
-			// Counting number of particles per box
+			// Counting number of particles per bounding box
 			for(int p_i = 0; p_i < n_particles; p_i++)
 			{
 				particle_t* p = &particles[p_i];
 
-				int x = (int)floor(p->position.x/domain.size.x * n_bounding_boxes_x);
-				int y = (int)floor(p->position.y/domain.size.y * n_bounding_boxes_y);
+				int x = (int)floor(p->position.x/domain.size.x * nbx);
+				int y = (int)floor(p->position.y/domain.size.y * nby);
 
 				// Some particles might be leaking out of the domain
-				if(x < 0 || y < 0 || x > n_bounding_boxes_x-1 || y > n_bounding_boxes_y-1) continue;
+				if(x < 0 || y < 0 || x > nbx-1 || y > nby-1) continue;
 
-				n_p_per_b[x*n_bounding_boxes_y + y]++;
+				n_p_per_b[x*nby+ y]++;
 			}
 
 			// Alloc space needed in list of particles per bounding box
-			for(int i = 0; i < n_bounding_boxes_x*n_bounding_boxes_y; i++)
-				p_per_b[i] = (particle_t**)realloc(p_per_b[i], sizeof(particle_t*)*n_p_per_b[i]);
+			for(int i = 0; i < nbx*nby; i++)
+				p_per_b[i] = (particle_t**)malloc(sizeof(particle_t*)*n_p_per_b[i]);
 
-			// Incremental list, counting current index of particle when inserting
-			// (see loop with p_i below)
-			unsigned int n_p_per_b_again[n_bounding_boxes_x*n_bounding_boxes_y];
-
-			// Assign all 0s to incremental list of numbers
-			for(int i = 0; i < n_bounding_boxes_x*n_bounding_boxes_y; i++)
-				n_p_per_b_again[i] = 0;
-
-			// Insert pointers to particles in bounding boxes
+			// Insert particles pointers in bounding boxes
 			for(int p_i = 0; p_i < n_particles; p_i++)
 			{
 				particle_t* p = &particles[p_i];
 
-				unsigned int p_x = (int)floor(p->position.x/domain.size.x * n_bounding_boxes_x);
-				unsigned int p_y = (int)floor(p->position.y/domain.size.y * n_bounding_boxes_y);
-				unsigned int p_xy = p_x*n_bounding_boxes_y + p_y;
+				int p_x = (int)floor(p->position.x/domain.size.x * nbx);
+				int p_y = (int)floor(p->position.y/domain.size.y * nby);
+				int p_xy = p_x*nby + p_y;
 
-				if(p_x < 0 || p_y < 0 || p_x > n_bounding_boxes_x-1 || p_y > n_bounding_boxes_y-1) continue;
-
-				p_per_b[p_xy][n_p_per_b_again[p_xy]] = p;
-
+				if(p_x < 0 || p_y < 0 || p_x > nbx-1 || p_y > nby-1) continue;
+				
 				// Count current particle index in bounding box
-				n_p_per_b_again[p_xy]++;
+				p_per_b[p_xy][n_p_per_b_again[p_xy]++] = p;
 			}
 		}
 
@@ -318,6 +320,10 @@ class Simulation
 
 			domain.last_update = now;
 
+			int max_b_x = (int)floor(domain.size.x/(p_radius*2.));
+            int max_b_y = (int)floor(domain.size.y/(p_radius*2.));
+			if(n_bounding_boxes_x > max_b_x) n_bounding_boxes_x = max_b_x;
+			if(n_bounding_boxes_y > max_b_y) n_bounding_boxes_y = max_b_y;
 			build_bounding_boxes();
 
 			// Saved number of used threads to leave none behind when cleaning up
@@ -392,16 +398,20 @@ class Simulation
 
 		~Simulation()
 		{
-			if(t.joinable())
-			{
-				should_run = false;
-				t.join();
-			}
+			should_run = false;
 
-			for(int i = 0; i < n_bounding_boxes_x*n_bounding_boxes_y; i++)
+			// Stop main thread
+			if(t.joinable())
+				t.join();
+
+			// Free bounding boxes with particles
+			for(int i = 0; i < nbx*nby; i++)
 			{
 					free(p_per_b[i]);
 			}
+			free(p_per_b);
+
+			// Free number of particles per box
 			free(n_p_per_b);
 
 			free(particles);
