@@ -22,10 +22,10 @@ class Render
 		unsigned int domain_ebo;
 		unsigned int domain_vbo;
 
-		Shader* particles_shaders;
-		Shader* domain_shaders;
+		Shader* particles_shaders = NULL;
+		Shader* domain_shaders = NULL;
 
-		GLFWwindow* window;
+		GLFWwindow* window = NULL;
 
 		float tri[8] = 
 		{
@@ -45,13 +45,19 @@ class Render
 
 	public:
 		float zoom = 1.;
-		int win_x, win_y;
+		int win_x = 1;
+		int win_y = 1;
 		
 		bool show_vel = false;
 		float arrow_max_vel = 20.;
 
 		bool show_accel = false;
 		float arrow_max_accel = 20.;
+
+		bool show_borders = true;
+		float border_size = 0.01;
+		bool show_boxes = true;
+		float box_line_size = 0.001;
 
 		Render(GLFWwindow* win, Simulation* sim)
 		{
@@ -113,8 +119,8 @@ class Render
 			domain_shaders->use();
 
 			domain_shaders->setVec2("domain_size",
-					simulation->domain.size.x,
-					simulation->domain.size.y
+					simulation->settings.domain_size.x,
+					simulation->settings.domain_size.y
 			);
 
 			domain_shaders->setVec2("window_size",
@@ -123,13 +129,17 @@ class Render
 			);
 
 			domain_shaders->setVec2("n_bounding_boxes",
-					simulation->n_bounding_boxes_x,
-					simulation->n_bounding_boxes_y
+					simulation->settings.n_bounding_boxes_x,
+					simulation->settings.n_bounding_boxes_y
 			);
 
-			domain_shaders->setFloat("zoom",
-					this->zoom
-			);
+			domain_shaders->setFloat("zoom", this->zoom);
+
+			domain_shaders->setBool("show_borders", this->show_borders);
+			domain_shaders->setFloat("border_size", this->border_size);
+
+			domain_shaders->setBool("show_boxes", this->show_boxes);
+			domain_shaders->setFloat("box_line_size", this->box_line_size);
 
 			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 		}
@@ -155,7 +165,7 @@ class Render
 
 			// Declare position buffer
 			glBindBuffer(GL_ARRAY_BUFFER, particles_positions_vbo);
-			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles*sizeof(particle_t), NULL, GL_DYNAMIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles()*sizeof(particle_t), NULL, GL_DYNAMIC_DRAW);
 			
 			// 2nd attribute is position
 			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)0);
@@ -182,7 +192,7 @@ class Render
 		{
 			glBindVertexArray(particles_vao);
 			glBindBuffer(GL_ARRAY_BUFFER, particles_positions_vbo);
-			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles*sizeof(particle_t), simulation->particles, GL_DYNAMIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles()*sizeof(particle_t), simulation->particles, GL_DYNAMIC_DRAW);
 
 			glVertexAttribDivisor(0, 0); // First attribute (Quad mesh) doesn't change
 			glVertexAttribDivisor(1, 1); // Second attribute (Particle pos) changes every 1 instance
@@ -197,7 +207,7 @@ class Render
 			);
 
 			particles_shaders->setFloat("particle_radius",
-					this->simulation->p_radius
+					this->simulation->settings.particle_radius
 			);
 
 			particles_shaders->setFloat("zoom",
@@ -210,7 +220,7 @@ class Render
 			particles_shaders->setBool("show_accel", this->show_accel);
 			particles_shaders->setFloat("arrow_max_accel", this->arrow_max_accel);
 
-			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, simulation->n_particles);
+			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, simulation->n_particles());
 		}
 
 		~Render()
