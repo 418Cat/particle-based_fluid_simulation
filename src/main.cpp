@@ -24,12 +24,8 @@ int main()
 	float captured_momentum = 0.; // Reference momentum at a user chosen frame
 	bool always_autoresize = true;
 	bool show_all_particles = false;
+	int n_particles = sim.n_particles();
 	// ==============================
-
-	// Temp sim settings ============
-	sim.settings.domain_size = vec2(100., 100.);
-	sim.settings.n_threads = 1;
-	// ===============================
 
 	sim.run();
 
@@ -51,6 +47,14 @@ int main()
 		ImGui::PopStyleColor();
 		ImGui::SameLine();
 		ImGui::SliderFloat("Sim speed", &sim.settings.speed, 0., 2.);
+
+		ImGui::InputInt("N_particles", &n_particles);
+		if(ImGui::Button("Reset sim"))
+		{
+			sim.reset(n_particles);
+			render.setup_particles();
+		}
+		ImGui::Spacing();
 
 		ImGui::BeginTabBar("Debug tab bar");
 

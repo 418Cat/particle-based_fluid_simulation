@@ -70,7 +70,7 @@ struct settings_t
 	unsigned int n_bounding_boxes_x = 1;
 	unsigned int n_bounding_boxes_y = 1;
 
-	vec2 domain_size = vec2(10., 10.);
+	vec2 domain_size = vec2(500., 500.);
 	float domain_bounciness = 0.9;
 	vec2 domain_gravity = vec2(0., -9.81);
 	bool domain_gravity_radial = false;
@@ -290,6 +290,20 @@ class Simulation
 			spawn_particles_as_rect();
 		}
 
+		void reset(int n_particles)
+		{
+			bool was_running = settings.run;
+			end();
+
+			particles 			= (particle_t*)realloc(particles, sizeof(particle_t)*n_particles);
+			state.particles 	= (particle_t*)realloc(state.particles, sizeof(particle_t)*n_particles);
+			state.n_particles 	= n_particles;
+
+			spawn_particles_as_rect();
+
+			if(was_running) run();
+		}
+
 		void run()
 		{
 			if(t.joinable())
@@ -309,8 +323,9 @@ class Simulation
 				{
 					auto sleep_time = 1.e9 * std::chrono::nanoseconds(1) / ((float)settings.hertz);
 
-					if(std::chrono::high_resolution_clock::now() - sleep_time >= state.domain.last_update)
-						tick();
+					// Sleep until it's time to tick() again, based on settings.hertz
+					std::this_thread::sleep_until(state.domain.last_update + sleep_time);
+					tick();
 				}
 			});
 		}
