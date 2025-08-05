@@ -15,7 +15,7 @@ void main()
 			zoom *
 			(
 				vs_pos / (window_size/domain_size)
-			) * (2. + 2.*border_size) - 1.
+			) * (2.+border_size/window_size) - 1.
 	, 0., 1.);
 	vs_uv = vs_pos;
 }

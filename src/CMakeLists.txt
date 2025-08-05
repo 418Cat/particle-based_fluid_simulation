@@ -1,17 +1,14 @@
 # Building UI part
 add_library(
-	fluid
-	fluid_ui.hpp
-	fluid_ui.cpp
+	sim_ui	
+	sim_ui.hpp
 )
 
 target_link_libraries(
-	fluid PUBLIC
+	sim_ui PUBLIC
 	ui
 	imgui
 )
-
-
 
 # Building Simulation part
 add_library(
@@ -73,7 +70,7 @@ add_executable(
 
 target_link_libraries(
 	main PUBLIC
-	fluid
+	sim_ui	
 	simulation
 	render
 )

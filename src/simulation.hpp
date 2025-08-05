@@ -6,6 +6,8 @@
 #include <chrono>
 #include <thread>
 
+#include "memory.h"
+
 using glm::vec2, glm::mod;
 
 struct particle_t
@@ -22,7 +24,6 @@ struct domain_t
 	bool radial_gravity = false;
 	vec2 gravity = vec2(0., -9.81);
 	float bounciness = .9;
-	std::chrono::time_point<std::chrono::high_resolution_clock> last_update = std::chrono::high_resolution_clock::now();
 };
 
 struct sim_state_t
@@ -36,11 +37,14 @@ struct sim_state_t
 	// with the ratios and type annotations
 	//std::chrono::duration<>();
 	float sim_seconds = 0.; // Number of seconds since sim start
-	float last_delta_t = 0.;
+
+	float delta_t = 0.;
+	std::chrono::time_point<std::chrono::high_resolution_clock> last_update = std::chrono::high_resolution_clock::now();
 
 	domain_t domain;
 
 	particle_t* particles;
+	particle_t* buff_particles;
 	unsigned int n_particles;
 	float p_radius = 1.;
 	float p_bounciness = 0.9;
@@ -89,8 +93,7 @@ class Simulation
 	public:
 		settings_t settings;
 
-		// Acts as public access to particles
-		// data and as a double buffer
+		// Acts as public access to particles data
 		particle_t* particles;
 
 		void update_settings()
@@ -128,6 +131,9 @@ class Simulation
 		const unsigned int& n_particles()
 			{return state.n_particles;}
 
+		const float& sim_tick_time()
+			{return state.delta_t;}
+
 		void spawn_particles_as_rect()
 		{
 			float side_length = ceil(sqrt(state.n_particles));
@@ -153,6 +159,7 @@ class Simulation
 
 				p->mass = 1.;
 
+				state.buff_particles[i] = *p;
 				particles[i] = *p;
 			}
 		}
@@ -213,29 +220,26 @@ class Simulation
 						// normal to the surface of both
 						vec2 normal = A->position - B->position;
 
-						float dist = glm::length(normal);
+						// Squared distance for the test
+						float dist = normal.x*normal.x + normal.y*normal.y;
 						if(dist == 0.) dist = 0.01;
-
-						// Normalize
-						normal /= dist;
 						
-						// Collision happens
-						if(dist < 2.*state.p_radius)
+						// Collision happens, test with (2*p_radius)² since
+						// dist is the distance squared
+						if(dist < 4.*state.p_radius*state.p_radius)
 						{
-							vec2 relative_vel = B->velocity - A->velocity;
+							// The actual distance is needed,
+							// no choice about using square root
+							dist = sqrt(dist);
 
-							// Bounce direction
-							vec2 a_newdir = A->velocity + normal*dot(relative_vel, normal);
+							// Normalize
+							normal /= dist;
 
-							//vec2 tangent = vec2(-normal.y, normal.x);
-							//A->acceleration = tangent*dot(A->acceleration, normal);
-
-							// Dampen the bounce
-							A->velocity = a_newdir*state.p_bounciness;
+							// Mirror the relative velocity (B_vel - A_vel) from the normal vector and dampen the bounce
+							A->velocity += normal * (dot(B->velocity - A->velocity, normal)*state.p_bounciness);
 
 							// A is inside B's radius, move it out
-							vec2 a_newpos = A->position - normal * (dist - 2.f * state.p_radius);
-							A->position = a_newpos;
+							A->position -= normal * (dist - 2.f * state.p_radius);
 						}
 					}
 				}
@@ -247,15 +251,14 @@ class Simulation
 			// Floor & Ceiling
 			if(p->position.y < state.p_radius)
 			{
-				// Equal and opposite reaction blablabla
-				//if(p->acceleration.y < 0.) p->acceleration.y = 0.;
+				//if(p->acceleration.y < 0.) p->acceleration.y = -p->acceleration.y;
 
 				p->velocity.y = -p->velocity.y * state.domain.bounciness;
 				p->position.y = state.p_radius;
 			}
 			if(p->position.y > state.domain.size.y - state.p_radius)
 			{
-				//if(p->acceleration.y > 0.) p->acceleration.y = 0.;
+				//if(p->acceleration.y > 0.) p->acceleration.y = -p->acceleration.y;
 
 				p->velocity.y = -p->velocity.y * state.domain.bounciness;
 				p->position.y = state.domain.size.y - state.p_radius;
@@ -264,14 +267,14 @@ class Simulation
 			// Walls
 			if(p->position.x < state.p_radius)
 			{
-				//if(p->acceleration.x < 0.) p->acceleration.x = 0.;
+				//if(p->acceleration.x < 0.) p->acceleration.x = -p->acceleration.x;
 
 				p->velocity.x = -p->velocity.x * state.domain.bounciness;
 				p->position.x = state.p_radius;
 			}
 			if(p->position.x > state.domain.size.x - state.p_radius)
 			{
-				//if(p->acceleration.x > 0.) p->acceleration.x = 0.;
+				//if(p->acceleration.x > 0.) p->acceleration.x = -p->acceleration.x;
 
 				p->velocity.x = -p->velocity.x * state.domain.bounciness;
 				p->position.x = state.domain.size.x - state.p_radius;
@@ -279,12 +282,12 @@ class Simulation
 		}
 
 
-	//public:
 		Simulation(int n_particles)
 		{
 			// Allocate needed space for particles
 			particles 			= (particle_t*)malloc(sizeof(particle_t)*n_particles);
 			state.particles 	= (particle_t*)malloc(sizeof(particle_t)*n_particles);
+			state.buff_particles= (particle_t*)malloc(sizeof(particle_t)*n_particles);
 			state.n_particles 	= n_particles;
 
 			spawn_particles_as_rect();
@@ -292,11 +295,15 @@ class Simulation
 
 		void reset(int n_particles)
 		{
+			std::clog << "Resetting sim with " << n_particles << " particles" << std::endl;
+
 			bool was_running = settings.run;
 			end();
 
-			particles 			= (particle_t*)realloc(particles, sizeof(particle_t)*n_particles);
-			state.particles 	= (particle_t*)realloc(state.particles, sizeof(particle_t)*n_particles);
+			particles 			= (particle_t*)realloc(particles, 				sizeof(particle_t)*n_particles);
+			state.particles 	= (particle_t*)realloc(state.particles, 		sizeof(particle_t)*n_particles);
+			state.buff_particles= (particle_t*)realloc(state.buff_particles, 	sizeof(particle_t)*n_particles);
+
 			state.n_particles 	= n_particles;
 
 			spawn_particles_as_rect();
@@ -317,6 +324,9 @@ class Simulation
 			// behind calling run() should be to, well, run the sim
 			settings.run = true;
 
+			// Reset timing to avoid end() <-> run() time difference issues
+			state.last_update = std::chrono::high_resolution_clock::now();
+
 			t = std::thread([&]()
 			{
 				while(settings.run)
@@ -324,7 +334,7 @@ class Simulation
 					auto sleep_time = 1.e9 * std::chrono::nanoseconds(1) / ((float)settings.hertz);
 
 					// Sleep until it's time to tick() again, based on settings.hertz
-					std::this_thread::sleep_until(state.domain.last_update + sleep_time);
+					std::this_thread::sleep_until(state.last_update + sleep_time);
 					tick();
 				}
 			});
@@ -367,16 +377,13 @@ class Simulation
 
 			// Assigning all 0s to 2D array containing the number
 			// of particles per bounding box
-			for(int i = 0; i < bboxes.nbx*bboxes.nby; i++)
-			{
-				bboxes.n_p_per_b[i] = 0;
-				n_p_per_b_again[i] = 0;
-			}
+			memset(bboxes.n_p_per_b, 0, sizeof(unsigned int)*bboxes.nbx*bboxes.nby);
+			memset(n_p_per_b_again , 0, sizeof(unsigned int)*bboxes.nbx*bboxes.nby);
 
 			// Counting number of particles per bounding box
 			for(int p_i = 0; p_i < state.n_particles; p_i++)
 			{
-				particle_t* p = &particles[p_i];
+				particle_t* p = &state.particles[p_i];
 
 				int x = (int)(p->position.x/state.domain.size.x * bboxes.nbx);
 				int y = (int)(p->position.y/state.domain.size.y * bboxes.nby);
@@ -396,7 +403,7 @@ class Simulation
 			// Insert particles pointers in bounding boxes
 			for(int p_i = 0; p_i < state.n_particles; p_i++)
 			{
-				particle_t* p = &particles[p_i];
+				particle_t* p = &state.particles[p_i];
 
 				int p_x = (int)(p->position.x/state.domain.size.x * bboxes.nbx);
 				int p_y = (int)(p->position.y/state.domain.size.y * bboxes.nby);
@@ -412,12 +419,9 @@ class Simulation
 		void tick()
 		{
 			auto now = std::chrono::high_resolution_clock::now();
-
-			float delta_t = (now - state.domain.last_update).count() / 1.e9; // count gives nanoseconds, *1e9 to get seconds
-			state.last_delta_t = delta_t;
-			delta_t *= settings.speed; // Scale delta_t depending on sim speed
-
-			state.domain.last_update = now;
+			state.delta_t = (now - state.last_update).count() / 1.e9; 	// count gives nanoseconds, *1e9 to get seconds
+			float delta_t = state.delta_t * settings.speed; 			// Scale this tick's delta_t depending on sim speed
+			state.last_update = now;
 
 			update_settings();
 			build_bounding_boxes();
@@ -443,11 +447,11 @@ class Simulation
 					 * to try to reduce this effect
 					 */
 					int i = p_i;
-					if(mod((float)state.iteration, 2.f) == 0.)
+					if(mod((float)state.iteration, 2.f) < 1.)
 						i = state.n_particles - p_i - 1;
 
-					particle_t* n_p = &state.particles[i];
-					particle_t* p = &particles[i];
+					particle_t* n_p = &state.buff_particles[i];
+					particle_t* p = &state.particles[i];
 
 					n_p->mass = p->mass;
 					n_p->position = p->position;
@@ -477,6 +481,8 @@ class Simulation
 
 					n_p->velocity += n_p->acceleration * delta_t;		//  v(t-1) + a(t)*t
 					n_p->position += n_p->velocity * delta_t; 					//  p(t-1) + v(t)*t
+					
+					particles[i] = *p;
 				}
 			});
 
@@ -485,9 +491,9 @@ class Simulation
 				ts[t_i].join();
 
 			// Swap both particle buffers
-			particle_t* last_frame_data = particles;
-			particles = state.particles;
-			state.particles = last_frame_data;
+			particle_t* last_frame_data = state.particles;
+			state.particles = state.buff_particles;
+			state.buff_particles = last_frame_data;
 
 			state.iteration++;
 		}
@@ -510,6 +516,7 @@ class Simulation
 
 			free(particles);
 			free(state.particles);
+			free(state.buff_particles);
 		}
 };
 

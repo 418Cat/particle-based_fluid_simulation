@@ -1,214 +1,43 @@
-#include "geometric.hpp"
-#include "imgui.h"
-
 #include "render.hpp"
 #include "simulation.hpp"
-#include "fluid_ui.hpp"
+#include "sim_ui.hpp"
 
 int main()
 {
-	FlUId::begin();
-	Simulation sim = Simulation(1000);
-	Render render = Render(FlUId::window, &sim);
+	SimUI ui = SimUI();
 
-	unsigned int max_threads = std::thread::hardware_concurrency();
+	Simulation sim = Simulation(3000);
+	Render render = Render(ui.window, &sim);
+
+	ui.sim = &sim;
+	ui.render = &render;
+
+	// Settings =============================
+	sim.settings.hertz = 1300;
+	sim.settings.n_threads = 8;
+	sim.settings.n_bounding_boxes_x = 200;
+	sim.settings.n_bounding_boxes_y = 200;
+	sim.settings.particle_radius = 1.;
+	sim.settings.domain_gravity_radial = true;
+	sim.settings.domain_gravity = vec2(20., 20.);
+	sim.settings.domain_size = vec2(400., 400.);
+
+	render.show_boxes = false;
+	render.show_vel = true;
+	// ======================================
 	
-	// Couldn't get max number of threads, defaulting to 1.
-	// (Assuming there's at least one thread, otherwise
-	// they'd have bigger issues than this)
-	if(max_threads < 1) max_threads = 1; 
-
-	// UI Settings & states =========
-	bool compute_momentum = false;
-	float last_momentum = 0.;
-	float captured_momentum = 0.; // Reference momentum at a user chosen frame
-	bool always_autoresize = true;
-	bool show_all_particles = false;
-	int n_particles = sim.n_particles();
-	// ==============================
+	const unsigned int frames_benchmark = 1000;
+	unsigned int n_frame = 0;
+	const bool benchmark = false;
 
 	sim.run();
 
-	while(FlUId::render_start())
+	while(ui.render_start() && (n_frame < frames_benchmark || !benchmark))
 	{
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(!sim.settings.run/2., sim.settings.run/2., 0., 1.));
-		if(ImGui::Button("Pause") && sim.settings.run) sim.settings.run = false;
-		ImGui::PopStyleColor();
-		ImGui::SameLine();
-
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(sim.settings.run/2., !sim.settings.run/2., 0., 1.));
-		if(ImGui::Button("Resume") && !sim.settings.run)
-		{
-			// TODO: Find a way to set last_update to now()
-			// since it's been revoked with sim.settings
-			//sim.domain.last_update = std::chrono::high_resolution_clock::now();
-			sim.run();
-		}
-		ImGui::PopStyleColor();
-		ImGui::SameLine();
-		ImGui::SliderFloat("Sim speed", &sim.settings.speed, 0., 2.);
-
-		ImGui::InputInt("N_particles", &n_particles);
-		if(ImGui::Button("Reset sim"))
-		{
-			sim.reset(n_particles);
-			render.setup_particles();
-		}
-		ImGui::Spacing();
-
-		ImGui::BeginTabBar("Debug tab bar");
-
-		if(ImGui::BeginTabItem("Settings"))
-		{
-			ImGui::SeparatorText("Simulation");
-			ImGui::SliderInt("Sim rate", (int*)&sim.settings.hertz, 1, 10000, "%d Hz");
-			ImGui::SliderInt("Number of threads", (int*)&sim.settings.n_threads, 1, max_threads);
-
-			ImGui::Spacing();
-			ImGui::Text("Bounding boxes XY");
-			ImGui::SliderInt("##BboxesX", (int*)(&sim.settings.n_bounding_boxes_x), 1, (int)floor(sim.settings.domain_size.x/(sim.settings.particle_radius*2.)));
-			ImGui::SliderInt("##BboxesY", (int*)(&sim.settings.n_bounding_boxes_y), 1, (int)floor(sim.settings.domain_size.y/(sim.settings.particle_radius*2.)));
-
-			ImGui::Spacing();
-			ImGui::Checkbox("Radial gravity", &sim.settings.domain_gravity_radial);
-			ImGui::SliderFloat2("Domain gravity, m/s", &sim.settings.domain_gravity.x, -40., 40.);
-
-			ImGui::Spacing();
-			ImGui::SliderFloat("Domain bounciness", &sim.settings.domain_bounciness, 0., 1.5);
-			ImGui::SliderFloat("Particles bounciness", &sim.settings.particles_bounciness, 0., 1.5);
-			ImGui::SliderFloat("Particle radius", &sim.settings.particle_radius, 0.01, 20.);
-
-			ImGui::Spacing();
-			ImGui::DragFloat2("Domain size", (float*)&sim.settings.domain_size, 1., 0.);
-
-			if(ImGui::Button("Reset particles"))
-			{
-				bool was_running = sim.settings.run;
-				sim.end();
-				sim.spawn_particles_as_rect();
-				if(was_running) sim.run();
-			}
-
-			ImGui::SeparatorText("Display");
-			ImGui::DragFloat("zoom", &render.zoom, render.zoom/10., 0., 100.);
-
-			if(ImGui::Button("Auto resize") || always_autoresize)
-			{
-				render.zoom = std::min(
-						render.win_x / sim.settings.domain_size.x,
-						render.win_y / sim.settings.domain_size.y 
-				);
-			}
-			ImGui::SameLine();
-			ImGui::Checkbox("Always", &always_autoresize);
-
-			ImGui::Checkbox("Show##vel", &render.show_vel);
-			ImGui::SameLine();
-			ImGui::DragFloat("Velocity arrow", &render.arrow_max_vel, render.arrow_max_vel/10. + 0.0001, 0.);
-
-			ImGui::Checkbox("Show##accel", &render.show_accel);
-			ImGui::SameLine();
-			ImGui::DragFloat("Acceleration arrow", &render.arrow_max_accel, render.arrow_max_accel/10. + 0.0001, 0.);
-
-			ImGui::Spacing();
-			ImGui::Checkbox("Show", &render.show_borders);
-			ImGui::SameLine();
-			ImGui::DragFloat("Domain borders thickness", &render.border_size, 1.e-3, 1.e-4, 5.e-2);
-			
-			ImGui::Checkbox("Show##boxes lines", &render.show_boxes);
-			ImGui::SameLine();
-			ImGui::DragFloat("Bounding boxes lines thickness", &render.box_line_size, render.border_size*0.05, 1.e-6, 1.e-1);
-
-			ImGui::EndTabItem();
-		}
-
-		if(ImGui::BeginTabItem("Info"))
-		{
-			ImGui::Text("Number of particles: %d", sim.n_particles());
-
-			ImGui::Separator();
-			//ImGui::Text("Sim time: %.1f µs", sim.last_delta_t*1.e6); TODO
-			ImGui::Text("Sim goal time: %.1f µs", 1.e6 / (float)sim.settings.hertz);
-
-			// float ratio = 1./ (sim.last_delta_t * (float)sim.settings.hertz); TODO
-			// ImGui::Text("Performance: %.1f %%", ratio*100.);
-			// ImGui::ProgressBar(ratio);
-
-			ImGui::Separator();
-
-			ImGui::Checkbox("Compute momentum", &compute_momentum);
-			if(compute_momentum)
-			{
-				float total_mom = 0.;
-
-				for(int i = 0; i < sim.n_particles(); i++)
-				{
-					particle_t* p = &sim.particles[i];
-					float mom = p->mass * length(p->velocity);
-					if(mom != mom)
-					{
-						printf("Particle %d has NaN momentum. Mass %.1f    Vel (%.1f , %.1f): %.1f     Momentum %.1f\n",
-								i, p->mass, p->velocity.x, p->velocity.y, length(p->velocity), mom);
-					}
-
-					total_mom += mom;
-				}
-
-				ImGui::Text("Momentum: %.1f kg*m/s\nRelative to last frame: %.1f%%\nRelative to saved: %.1f%%",
-						total_mom,
-						(last_momentum - total_mom)/total_mom * 100.,
-						(last_momentum - captured_momentum)/captured_momentum * 100.
-				);
-				last_momentum = total_mom;
-
-				if(ImGui::Button("Save momentum"))
-					captured_momentum = total_mom;
-
-				ImGui::Separator();
-			}
-
-			ImGui::Checkbox("Show all particles", &show_all_particles);
-			if(show_all_particles)
-			{
-				ImGui::BeginTable("Particles", 4,
-						ImGuiTableFlags_Resizable
-				);
-				ImGui::TableSetupColumn("i");
-				ImGui::TableSetupColumn("Position (m)");
-				ImGui::TableSetupColumn("Velocity (m/s)");
-				ImGui::TableSetupColumn("Mass (kg)");
-				ImGui::TableHeadersRow();
-
-				for(int i = 0; i < sim.n_particles(); i++)
-				{
-					ImGui::TableNextRow();
-					particle_t* A = &sim.particles[i];
-
-					ImGui::TableSetColumnIndex(0);
-					ImGui::Text("%d", i);
-					
-					ImGui::TableNextColumn();
-					ImGui::Text("(%.1f , %.1f)", A->position.x, A->position.y);
-
-					ImGui::TableNextColumn();
-					ImGui::Text("(%.1f , %.1f) : %.1f", A->velocity.x, A->velocity.y, length(A->velocity));
-
-					ImGui::TableNextColumn();
-					ImGui::Text("%.1f", A->mass);
-				}
-				ImGui::EndTable();
-			}
-
-			ImGui::EndTabItem();
-		}
-
-		ImGui::EndTabBar();
-
 		render.frame();
-		FlUId::render_stop();
+		ui.render_stop();
+		n_frame++;
 	}
 
-	std::cout << "Exiting" << std::endl;
-
-	return FlUId::end();
+	return ui.end();
 }

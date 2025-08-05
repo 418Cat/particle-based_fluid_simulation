@@ -1,7 +1,6 @@
 #ifndef RENDER_H
 #define RENDER_H
 
-
 #include <iostream>
 
 #include "glad/glad.h"
@@ -55,9 +54,9 @@ class Render
 		float arrow_max_accel = 20.;
 
 		bool show_borders = true;
-		float border_size = 0.01;
+		int border_size = 1;
 		bool show_boxes = true;
-		float box_line_size = 0.001;
+		int box_line_size = 1;
 
 		Render(GLFWwindow* win, Simulation* sim)
 		{
