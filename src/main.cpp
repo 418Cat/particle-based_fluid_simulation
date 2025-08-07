@@ -6,21 +6,23 @@ int main()
 {
 	SimUI ui = SimUI();
 
-	Simulation sim = Simulation(3000);
+	Simulation sim = Simulation(3);
 	Render render = Render(ui.window, &sim);
 
 	ui.sim = &sim;
 	ui.render = &render;
 
 	// Settings =============================
-	sim.settings.hertz = 1300;
+	sim.settings.hertz = 1000;
 	sim.settings.n_threads = 8;
-	sim.settings.n_bounding_boxes_x = 200;
-	sim.settings.n_bounding_boxes_y = 200;
+	sim.settings.n_bounding_boxes_x = 1;
+	sim.settings.n_bounding_boxes_y = 1;
 	sim.settings.particle_radius = 1.;
 	sim.settings.domain_gravity_radial = true;
-	sim.settings.domain_gravity = vec2(20., 20.);
-	sim.settings.domain_size = vec2(400., 400.);
+	sim.settings.domain_gravity = vec2(0., 0.);
+	sim.settings.domain_size = vec2(1000., 1000.);
+	sim.settings.domain_bounciness = 0.4;
+	sim.settings.particles_bounciness = 0.6;
 
 	render.show_boxes = false;
 	render.show_vel = true;

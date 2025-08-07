@@ -1,13 +1,13 @@
-#ifndef FLUID_UI_H
-#define FLUID_UI_H
+#ifndef SIM_UI_H
+#define SIM_UI_H
 
 #include <thread>
 
+#include "imgui.h"
 #include "render.hpp"
 #include "simulation.hpp"
 
 #include "ui.h"
-
 
 // Funny name with Fluid and UI :D
 class SimUI
@@ -23,6 +23,7 @@ class SimUI
 		bool always_autoresize = true;
 		bool show_all_particles = false;
 		int n_particles = 0;
+		bool clear_screen = true;
 		// ==============================
 
 	public:
@@ -101,6 +102,9 @@ class SimUI
 				ImGui::Spacing();
 				ImGui::Checkbox("Radial gravity", &sim->settings.domain_gravity_radial);
 				ImGui::SliderFloat2("Domain gravity, m/s", &sim->settings.domain_gravity.x, -40., 40.);
+				ImGui::Checkbox("Particles gravity", &sim->settings.particle_gravity);
+				ImGui::SameLine();
+				ImGui::Checkbox("Inverse", &sim->settings.particles_gravity_inverse);
 
 				ImGui::Spacing();
 				ImGui::SliderFloat("Domain bounciness", &sim->settings.domain_bounciness, 0., 1.5);
@@ -147,6 +151,9 @@ class SimUI
 				ImGui::Checkbox("Show##boxes lines", &render->show_boxes);
 				ImGui::SameLine();
 				ImGui::DragInt("Bounding boxes lines thickness", &render->box_line_size, 1, 1, 30);
+
+				ImGui::Spacing();
+				ImGui::Checkbox("Clear screen", &clear_screen);
 
 				ImGui::EndTabItem();
 			}
@@ -197,6 +204,7 @@ class SimUI
 				}
 
 				ImGui::Checkbox("Show all particles", &show_all_particles);
+				//ImGui::InputText();
 				if(show_all_particles)
 				{
 					ImGui::BeginTable("Particles", 4,
@@ -241,7 +249,7 @@ class SimUI
 		{
 			if(UI::ui_is_shown()) 
 			{
-				UI::ui_render_start();
+				UI::ui_render_start(!clear_screen & UI_RENDER_FLAG_NO_CLEAR);
 				SimUI::side_window();
 			}
 

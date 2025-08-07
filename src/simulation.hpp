@@ -48,6 +48,8 @@ struct sim_state_t
 	unsigned int n_particles;
 	float p_radius = 1.;
 	float p_bounciness = 0.9;
+	bool p_gravity = false;
+	bool p_gravity_inverse = false;
 };
 
 struct bounding_boxes_t
@@ -81,6 +83,8 @@ struct settings_t
 
 	float particle_radius = 1.;
 	float particles_bounciness = 0.9;
+	bool particle_gravity = false;
+	bool particles_gravity_inverse = false;
 };
 
 class Simulation
@@ -126,6 +130,9 @@ class Simulation
 				settings.n_threads = max_threads;
 
 			state.n_threads = settings.n_threads;
+
+			state.p_gravity = settings.particle_gravity;
+			state.p_gravity_inverse = settings.particles_gravity_inverse;
 		}
 
 		const unsigned int& n_particles()
@@ -151,12 +158,7 @@ class Simulation
 					(int)(i / side_length) * dy + state.p_radius
 				);
 
-
-				p->velocity = vec2(
-						p->position.x - state.domain.size.x / 2.,
-						p->position.y - state.domain.size.y / 2.
-				);
-
+				p->velocity = p->position - state.domain.size / 2.f;
 				p->mass = 1.;
 
 				state.buff_particles[i] = *p;
@@ -164,11 +166,11 @@ class Simulation
 			}
 		}
 
-		void total_forces_on_particle(particle_t* p)
+		void domain_gravity(particle_t* n_p, particle_t* p)
 		{
 			if(state.domain.radial_gravity)
 			{
-				vec2 to_center = state.domain.size/2.f - p->position;
+				vec2 to_center = state.domain.size/2.f - n_p->position;
 
 				float distance = glm::length(to_center);
 				float gravity_norm = glm::length(state.domain.gravity);
@@ -176,15 +178,27 @@ class Simulation
 				if(distance == 0.) distance = 0.01;
 				to_center *= gravity_norm / distance;
 
-				p->acceleration += to_center;
-				return;
+				n_p->acceleration += to_center;
 			}
+			else
+				n_p->acceleration += state.domain.gravity;
 
-			p->acceleration += state.domain.gravity;
+
 		}
 
-		void collision_check(particle_t* A, particle_t* old_A)
+		void particles_interactions(particle_t* A, particle_t* old_A)
 		{
+
+			/*--------------*\
+			 * 1- Collision	*
+			 * 2- Gravity	*
+			\*--------------*/ 
+
+			/*------------------------------------*\
+			 * 1- This section handles mechanical *
+			 * interactions between particles	  *
+			\*------------------------------------*/ 
+
 			// Position in bounding boxes
 			int A_x = (int)(A->position.x/state.domain.size.x * bboxes.nbx);
 			int A_y = (int)(A->position.y/state.domain.size.y * bboxes.nby);
@@ -236,7 +250,7 @@ class Simulation
 							normal /= dist;
 
 							// Mirror the relative velocity (B_vel - A_vel) from the normal vector and dampen the bounce
-							A->velocity += normal * (dot(B->velocity - A->velocity, normal)*state.p_bounciness);
+							A->velocity -= normal * dot(A->velocity - B->velocity, normal)*state.p_bounciness;
 
 							// A is inside B's radius, move it out
 							A->position -= normal * (dist - 2.f * state.p_radius);
@@ -244,6 +258,35 @@ class Simulation
 					}
 				}
 			}
+
+
+
+
+			/*----------------------------------------*\
+			 * 2- This section handles gravitationnal *
+			 * interactions between particles		  *
+			\*----------------------------------------*/ 
+
+			if(state.p_gravity)
+			{
+				vec2 total_gravity = vec2(0., 0.);
+				float G = 6.6743e-11;
+				if(state.p_gravity_inverse) G *= -1.;
+
+				for(int p_i = 0; p_i < state.n_particles; p_i++)
+				{
+					particle_t* B = &state.particles[p_i];
+
+					if(B == old_A) continue;
+					vec2 normal = B->position - old_A->position;
+					float dist = length(normal);
+					normal /= dist;
+
+					total_gravity += normal * G*(old_A->mass * B->mass * 1.e13f)/(dist*dist);
+				}
+				A->acceleration += total_gravity;
+			}
+
 		}
 
 		void domain_boundaries(particle_t* p)
@@ -475,12 +518,12 @@ class Simulation
 					// are constant in the interval (t, t+1). The higher the tickrate, the 
 					// more accurate the sim will be as this interval will be reduced
 
-					total_forces_on_particle(n_p);
-					collision_check(n_p, p);
+					particles_interactions(n_p, p);
+					domain_gravity(n_p, p);
 					domain_boundaries(n_p);
 
-					n_p->velocity += n_p->acceleration * delta_t;		//  v(t-1) + a(t)*t
-					n_p->position += n_p->velocity * delta_t; 					//  p(t-1) + v(t)*t
+					n_p->velocity += n_p->acceleration * (float)delta_t;		//  v(t-1) + a(t)*t
+					n_p->position += n_p->velocity * (float)delta_t; 					//  p(t-1) + v(t)*t
 					
 					particles[i] = *p;
 				}

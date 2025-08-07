@@ -18,7 +18,7 @@ out vec4 col;
 
 void main()
 {
-	col = vec4(0., 0., 0., 1.);
+	col = vec4(0.);
 	//float aspect_ratio = domain_size.x / domain_size.y;
 	vec2 d_uv = vs_uv;
 	
@@ -35,4 +35,7 @@ void main()
 	    mod(pix.y, domain_size.y/n_bounding_boxes.y) < box_line_size/zoom)
 			&& show_boxes
 	) col = vec4(1., 0., 0., 1.);
+
+	// Make transparent background in case clear_screen is false
+	if(col == vec4(0.)) discard;
 }

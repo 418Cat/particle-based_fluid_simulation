@@ -38,8 +38,8 @@ add_library(
 	glm/glm/glm.hpp
 )
 
-# It's some .h files so cmake
-# doesn't know if it's C or C++
+# It seems like Cmake doesn't
+# know .hpp are C++ headers
 set_target_properties(
 	glm PROPERTIES
 	LINKER_LANGUAGE CXX # Set to C++
@@ -47,7 +47,7 @@ set_target_properties(
 
 target_include_directories(
 	glm PUBLIC
-	glm/glm
+	${CMAKE_CURRENT_SOURCE_DIR}/glm/glm
 )
 # ____________________
 
@@ -71,13 +71,7 @@ target_link_libraries(
 	libGL.so
 )
 
-set(
-	GLAD_INCLUDE_DIR
-	${CMAKE_CURRENT_SOURCE_DIR}/glad/include/
-)
-
 # ____________________
-
 
 add_subdirectory(utils/UI)
 add_subdirectory(utils/shader)
