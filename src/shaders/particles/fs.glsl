@@ -1,10 +1,9 @@
 #version 460 core
 
 in vec2 fs_uv;
-in vec2 velocity;
-in vec2 acceleration;
+in vec3 velocity;
+in vec3 acceleration;
 
-uniform vec2 domain_size;
 uniform vec2 window_size;
 uniform float particle_radius;
 
@@ -57,7 +56,7 @@ void main()
 		vec2 uv_dir = fs_uv/radius;
 
 		// Color the arrow with gradient based on velocity
-		if(arrow_dist(fs_uv, velocity, arrow_max_vel) < ratio * 0.1)
+		if(arrow_dist(fs_uv, velocity.xy, arrow_max_vel) < ratio * 0.1)
 			col = vec4(
 					vec3(0., 0., 1.)*(1.-ratio) +
 					vec3(1., 0., 0.)*ratio, 
@@ -71,7 +70,7 @@ void main()
 		vec2 uv_dir = fs_uv/radius;
 
 		// Color the arrow with gradient based on velocity
-		if(arrow_dist(fs_uv, acceleration, arrow_max_accel) < accel/arrow_max_accel * 0.1)
+		if(arrow_dist(fs_uv, acceleration.xy, arrow_max_accel) < accel/arrow_max_accel * 0.1)
 			col = vec4(0., clamp(ratio*0.8, 0., 1.), clamp(1.-ratio*0.8, 0., 1.), 1.);
 	}
 }

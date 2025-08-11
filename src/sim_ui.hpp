@@ -82,7 +82,7 @@ class SimUI
 			if(ImGui::Button("Reset sim"))
 			{
 				sim->reset(n_particles);
-				render->setup_particles();
+				render->particles_buffers();
 			}
 			ImGui::Spacing();
 
@@ -101,7 +101,7 @@ class SimUI
 
 				ImGui::Spacing();
 				ImGui::Checkbox("Radial gravity", &sim->settings.domain_gravity_radial);
-				ImGui::SliderFloat2("Domain gravity, m/s", &sim->settings.domain_gravity.x, -40., 40.);
+				ImGui::SliderFloat3("Domain gravity, m/s", &sim->settings.domain_gravity.x, -40., 40.);
 				ImGui::Checkbox("Particles gravity", &sim->settings.particle_gravity);
 				ImGui::SameLine();
 				ImGui::Checkbox("Inverse", &sim->settings.particles_gravity_inverse);
@@ -112,7 +112,7 @@ class SimUI
 				ImGui::SliderFloat("Particle radius", &sim->settings.particle_radius, 0.01, 20.);
 
 				ImGui::Spacing();
-				ImGui::DragFloat2("Domain size", (float*)&sim->settings.domain_size, 1., 0.);
+				ImGui::DragFloat3("Domain size", (float*)&sim->settings.domain_size, 1., 0.);
 
 				if(ImGui::Button("Reset particles"))
 				{
@@ -207,12 +207,13 @@ class SimUI
 				//ImGui::InputText();
 				if(show_all_particles)
 				{
-					ImGui::BeginTable("Particles", 4,
+					ImGui::BeginTable("Particles", 5,
 							ImGuiTableFlags_Resizable
 					);
 					ImGui::TableSetupColumn("i");
 					ImGui::TableSetupColumn("Position (m)");
 					ImGui::TableSetupColumn("Velocity (m/s)");
+					ImGui::TableSetupColumn("Acceleration (m/s²)");
 					ImGui::TableSetupColumn("Mass (kg)");
 					ImGui::TableHeadersRow();
 
@@ -225,10 +226,13 @@ class SimUI
 						ImGui::Text("%d", i);
 						
 						ImGui::TableNextColumn();
-						ImGui::Text("(%.1f , %.1f)", A->position.x, A->position.y);
+						ImGui::Text("(%.1f , %.1f, %.1f)", A->position.x, A->position.y, A->position.z);
 
 						ImGui::TableNextColumn();
-						ImGui::Text("(%.1f , %.1f) : %.1f", A->velocity.x, A->velocity.y, length(A->velocity));
+						ImGui::Text("(%.1f , %.1f, %.1f) : %.1f", A->velocity.x, A->velocity.y, A->velocity.z, length(A->velocity));
+
+						ImGui::TableNextColumn();
+						ImGui::Text("(%.1f , %.1f, %.1f) : %.1f", A->acceleration.x, A->acceleration.y, A->acceleration.z, length(A->acceleration));
 
 						ImGui::TableNextColumn();
 						ImGui::Text("%.1f", A->mass);

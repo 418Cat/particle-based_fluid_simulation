@@ -7,8 +7,12 @@
 
 #include <GLFW/glfw3.h>
 
+#include <gtc/type_ptr.hpp>
+
+#include "ext/matrix_clip_space.hpp"
 #include "simulation.hpp"
 #include "shader.h"
+#include "camera.hpp"
 
 class Render
 {
@@ -42,6 +46,7 @@ class Render
 		};
 
 		Simulation* simulation;
+		Camera* camera;
 
 	public:
 		float zoom = 1.;
@@ -59,18 +64,36 @@ class Render
 		bool show_boxes = true;
 		int box_line_size = 1;
 
-		Render(GLFWwindow* win, Simulation* sim)
+		Render(GLFWwindow* win, Simulation* sim, Camera* camera)
 		{
 			std::cout << "\n=============== Starting OpenGL init" << std::endl;
 			this->simulation = sim;
+			this->camera = camera;
 
 			if(!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 				throw("Failed to load Glad GL Loader");
 			else
 				std::cout << "Loaded Glad correctly" << std::endl;
 
-			setup_particles();
-			setup_domain();
+			domain_shaders = new Shader(
+					"shaders/domain/vs.glsl",
+					"shaders/domain/fs.glsl"
+			);
+			std::cout << "Domain shaders set" << std::endl;
+
+			particles_shaders = new Shader(
+					"shaders/particles/vs.glsl",
+					"shaders/particles/fs.glsl"
+			);
+			std::cout << "Particles shaders set" << std::endl;
+
+			particles_buffers();
+			std::cout << "Particles GL Buffers generated" << std::endl;
+
+			domain_buffers();
+			std::cout << "Domain GL Buffers generated" << std::endl;
+
+			glEnable(GL_DEPTH_TEST);
 
 			this->window = win;
 
@@ -85,7 +108,7 @@ class Render
 			draw_particles();
 		}
 
-		void setup_domain()
+		void domain_buffers()
 		{
 			glGenVertexArrays(1, &domain_vao);
 			glGenBuffers(1, &domain_vbo);
@@ -102,14 +125,6 @@ class Render
 			// First attribute is the vertex's position for the plane
 			glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
 			glEnableVertexAttribArray(0);
-
-			std::cout << "Domain GL Buffers generated" << std::endl;
-
-			const char* domain_vs_path = "shaders/domain/vs.glsl";
-			const char* domain_fs_path = "shaders/domain/fs.glsl";
-			domain_shaders = new Shader(domain_vs_path, domain_fs_path);
-
-			std::cout << "Domain shaders set" << std::endl;
 		}
 
 		void draw_domain()
@@ -144,7 +159,7 @@ class Render
 			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 		}
 
-		void setup_particles()
+		void particles_buffers()
 		{
 			glGenVertexArrays(1, &particles_vao);
 			glGenBuffers(1, &particles_vbo);
@@ -168,24 +183,16 @@ class Render
 			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles()*sizeof(particle_t), NULL, GL_DYNAMIC_DRAW);
 			
 			// 2nd attribute is position
-			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)0);
+			glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)0);
 			glEnableVertexAttribArray(1);
 
 			// 3rd attribute is particle velocity
-			glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)sizeof(vec2));
+			glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)sizeof(vec3));
 			glEnableVertexAttribArray(2);
 			
 			// 4th attribute is particle acceleration
-			glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec2)*2));
+			glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec3)*2));
 			glEnableVertexAttribArray(3);
-
-			std::cout << "Particles GL Buffers generated" << std::endl;
-
-			const char* particles_vs_path = "shaders/particles/vs.glsl";
-			const char* particles_fs_path = "shaders/particles/fs.glsl";
-			particles_shaders = new Shader(particles_vs_path, particles_fs_path);
-
-			std::cout << "Particles shaders set" << std::endl;
 		}
 
 		void draw_particles()
@@ -219,13 +226,25 @@ class Render
 
 			particles_shaders->setBool("show_accel", this->show_accel);
 			particles_shaders->setFloat("arrow_max_accel", this->arrow_max_accel);
+			particles_shaders->setMat4("view_mat",
+					(float*)glm::value_ptr(this->camera->view_mat())
+			);
+
+			glm::mat4 project_mat = glm::perspectiveFov(
+					90.f, (float)win_x, (float)win_y, 0.1f, 1000.f
+			);
+
+			particles_shaders->setMat4("project_mat",
+					(float*)glm::value_ptr(project_mat)
+			);
 
 			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, simulation->n_particles());
 		}
 
 		~Render()
 		{
-			//free(shaders);
+			delete particles_shaders;
+			delete domain_shaders;
 		}
 };
 

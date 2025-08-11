@@ -1,6 +1,8 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
+#include <iostream>
+
 #include "glm.hpp"
 
 #include <chrono>
@@ -8,21 +10,21 @@
 
 #include "memory.h"
 
-using glm::vec2, glm::mod;
+using glm::vec3, glm::mod;
 
 struct particle_t
 {
-	vec2 position = vec2(1., 1.);
-	vec2 velocity = vec2(0., 0.);
-	vec2 acceleration = vec2(0., 0.);
+	vec3 position = vec3(1., 1., 1.);
+	vec3 velocity = vec3(0., 0., 0.);
+	vec3 acceleration = vec3(0., 0., 0.);
 	float mass = 1.;
 };
 
 struct domain_t
 {
-	vec2 size = vec2(500., 500.);
+	vec3 size = vec3(500., 500., 500.);
 	bool radial_gravity = false;
-	vec2 gravity = vec2(0., -9.81);
+	vec3 gravity = vec3(0., -9.81, 0.);
 	float bounciness = .9;
 };
 
@@ -76,9 +78,9 @@ struct settings_t
 	unsigned int n_bounding_boxes_x = 1;
 	unsigned int n_bounding_boxes_y = 1;
 
-	vec2 domain_size = vec2(500., 500.);
+	vec3 domain_size = vec3(500., 500., 500.);
 	float domain_bounciness = 0.9;
-	vec2 domain_gravity = vec2(0., -9.81);
+	vec3 domain_gravity = vec3(0., -9.81, 0.);
 	bool domain_gravity_radial = false;
 
 	float particle_radius = 1.;
@@ -143,9 +145,12 @@ class Simulation
 
 		void spawn_particles_as_rect()
 		{
-			float side_length = ceil(sqrt(state.n_particles));
+			float side_length = ceil(powf(state.n_particles, 1./3.));
 			float dx = state.domain.size.x/side_length;
 			float dy = state.domain.size.y/side_length;
+			float dz = state.domain.size.z/side_length;
+
+			std::cout << "Domain size z: " << state.domain.size.z << std::endl;
 
 			for(int i = 0; i < state.n_particles; i++)
 			{
@@ -153,9 +158,10 @@ class Simulation
 
 				*p = particle_t();
 
-				p->position = vec2(
+				p->position = vec3(
 					mod((float)i, side_length) * dx + state.p_radius,
-					(int)(i / side_length) * dy + state.p_radius
+					(int)mod(i/side_length, side_length) * dy + state.p_radius,
+					(int)(i/(side_length*side_length)) * dz + state.p_radius
 				);
 
 				p->velocity = p->position - state.domain.size / 2.f;
@@ -170,7 +176,7 @@ class Simulation
 		{
 			if(state.domain.radial_gravity)
 			{
-				vec2 to_center = state.domain.size/2.f - n_p->position;
+				vec3 to_center = state.domain.size/2.f - n_p->position;
 
 				float distance = glm::length(to_center);
 				float gravity_norm = glm::length(state.domain.gravity);
@@ -232,10 +238,10 @@ class Simulation
 
 						// Vector going from B's center to A's center,
 						// normal to the surface of both
-						vec2 normal = A->position - B->position;
+						vec3 normal = A->position - B->position;
 
 						// Squared distance for the test
-						float dist = normal.x*normal.x + normal.y*normal.y;
+						float dist = normal.x*normal.x + normal.y*normal.y + normal.z*normal.z;
 						if(dist == 0.) dist = 0.01;
 						
 						// Collision happens, test with (2*p_radius)² since
@@ -269,7 +275,7 @@ class Simulation
 
 			if(state.p_gravity)
 			{
-				vec2 total_gravity = vec2(0., 0.);
+				vec3 total_gravity = vec3(0., 0., 0.);
 				float G = 6.6743e-11;
 				if(state.p_gravity_inverse) G *= -1.;
 
@@ -278,7 +284,7 @@ class Simulation
 					particle_t* B = &state.particles[p_i];
 
 					if(B == old_A) continue;
-					vec2 normal = B->position - old_A->position;
+					vec3 normal = B->position - old_A->position;
 					float dist = length(normal);
 					normal /= dist;
 
@@ -307,7 +313,7 @@ class Simulation
 				p->position.y = state.domain.size.y - state.p_radius;
 			}
 
-			// Walls
+			// X walls
 			if(p->position.x < state.p_radius)
 			{
 				//if(p->acceleration.x < 0.) p->acceleration.x = -p->acceleration.x;
@@ -321,6 +327,22 @@ class Simulation
 
 				p->velocity.x = -p->velocity.x * state.domain.bounciness;
 				p->position.x = state.domain.size.x - state.p_radius;
+			}
+
+			// Z walls
+			if(p->position.z < state.p_radius)
+			{
+				//if(p->acceleration.z < 0.) p->acceleration.z = -p->acceleration.z;
+
+				p->velocity.z = -p->velocity.z * state.domain.bounciness;
+				p->position.z = state.p_radius;
+			}
+			if(p->position.z > state.domain.size.z - state.p_radius)
+			{
+				//if(p->acceleration.z > 0.) p->acceleration.z = -p->acceleration.z;
+
+				p->velocity.z = -p->velocity.z * state.domain.bounciness;
+				p->position.z = state.domain.size.z - state.p_radius;
 			}
 		}
 
@@ -499,7 +521,7 @@ class Simulation
 					n_p->mass = p->mass;
 					n_p->position = p->position;
 					n_p->velocity = p->velocity;
-					n_p->acceleration = vec2(0., 0.); // Reset acceleration each frame
+					n_p->acceleration = vec3(0., 0., 0.); // Reset acceleration each frame
 
 					// Assuming gravity is the only force acting on particles:
 					// The following formula gives the analytic solution to the
