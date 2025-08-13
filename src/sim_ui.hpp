@@ -20,7 +20,6 @@ class SimUI
 		bool compute_momentum = false;
 		float last_momentum = 0.;
 		float captured_momentum = 0.; // Reference momentum at a user chosen frame
-		bool always_autoresize = true;
 		bool show_all_particles = false;
 		int n_particles = 0;
 		bool clear_screen = true;
@@ -30,6 +29,7 @@ class SimUI
 		GLFWwindow* window;
 		Simulation* sim = NULL;
 		Render* render = NULL;
+		Camera* camera = NULL;
 	
 		SimUI()
 		{
@@ -123,17 +123,7 @@ class SimUI
 				}
 
 				ImGui::SeparatorText("Display");
-				ImGui::DragFloat("zoom", &render->zoom, render->zoom/10., 0., 100.);
-
-				if(ImGui::Button("Auto resize") || always_autoresize)
-				{
-					render->zoom = std::min(
-							(render->win_x * (1.f-side_window_size)) / sim->settings.domain_size.x,
-							render->win_y / sim->settings.domain_size.y 
-					);
-				}
-				ImGui::SameLine();
-				ImGui::Checkbox("Always", &always_autoresize);
+				ImGui::DragFloat("FOV", &camera->fov, camera->fov/10., 1., 100.);
 
 				ImGui::Checkbox("Show##vel", &render->show_vel);
 				ImGui::SameLine();

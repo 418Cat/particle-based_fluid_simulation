@@ -49,7 +49,6 @@ class Render
 		Camera* camera;
 
 	public:
-		float zoom = 1.;
 		int win_x = 1;
 		int win_y = 1;
 		
@@ -148,8 +147,6 @@ class Render
 					simulation->settings.n_bounding_boxes_y
 			);
 
-			domain_shaders->setFloat("zoom", this->zoom);
-
 			domain_shaders->setBool("show_borders", this->show_borders);
 			domain_shaders->setFloat("border_size", this->border_size);
 
@@ -208,17 +205,8 @@ class Render
 
 			particles_shaders->use();
 
-			particles_shaders->setVec2(
-					"window_size",
-					(float)this->win_x, (float)this->win_y
-			);
-
 			particles_shaders->setFloat("particle_radius",
 					this->simulation->settings.particle_radius
-			);
-
-			particles_shaders->setFloat("zoom",
-					this->zoom
 			);
 
 			particles_shaders->setBool("show_vel", this->show_vel);
@@ -231,11 +219,15 @@ class Render
 			);
 
 			glm::mat4 project_mat = glm::perspectiveFov(
-					90.f, (float)win_x, (float)win_y, 0.1f, 1000.f
+					camera->fov*glm::pi<float>()/180.f, (float)win_x, (float)win_y, 0.1f, 1000.f
 			);
 
 			particles_shaders->setMat4("project_mat",
 					(float*)glm::value_ptr(project_mat)
+			);
+
+			particles_shaders->setVec3("camera_pos",
+					camera->pos.x, camera->pos.y, camera->pos.z
 			);
 
 			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, simulation->n_particles());

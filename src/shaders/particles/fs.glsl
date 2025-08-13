@@ -4,9 +4,6 @@ in vec2 fs_uv;
 in vec3 velocity;
 in vec3 acceleration;
 
-uniform vec2 window_size;
-uniform float particle_radius;
-
 uniform bool show_vel;
 uniform float arrow_max_vel;
 
@@ -45,8 +42,8 @@ void main()
 
 	if(radius > 1.) discard;
 
-	if(radius > .95) col = vec4(1., .3, 0., 1.);
-	else col = vec4(1.);
+	//if(dot(fs_uv/length(fs_uv), vec2(0., 1.)) > 0.95) col = vec4(0., 1., 0., 1.);
+	/*else*/ col = vec4(1.);
 
 	if(show_vel)
 	{

@@ -4,7 +4,6 @@ uniform vec2 window_size;
 
 uniform vec2 domain_size;
 uniform vec2 n_bounding_boxes;
-uniform float zoom;
 
 uniform bool show_borders;
 uniform float border_size;
@@ -31,8 +30,8 @@ void main()
 	) col = vec4(0., 1., 0., 1.);
 
 	// Boxes lines
-	if((mod(pix.x, domain_size.x/n_bounding_boxes.x) < box_line_size/zoom ||
-	    mod(pix.y, domain_size.y/n_bounding_boxes.y) < box_line_size/zoom)
+	if((mod(pix.x, domain_size.x/n_bounding_boxes.x) < box_line_size ||
+	    mod(pix.y, domain_size.y/n_bounding_boxes.y) < box_line_size)
 			&& show_boxes
 	) col = vec4(1., 0., 0., 1.);
 
