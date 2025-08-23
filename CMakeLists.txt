@@ -4,7 +4,7 @@ project(
 	particle_sim
 	VERSION 0.1
 )
-
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 set(CMAKE_EXPORT_COMPILE_COMMANDS on)
 
 add_subdirectory(libs)

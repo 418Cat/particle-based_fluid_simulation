@@ -42,32 +42,28 @@ void main()
 
 	if(radius > 1.) discard;
 
-	//if(dot(fs_uv/length(fs_uv), vec2(0., 1.)) > 0.95) col = vec4(0., 1., 0., 1.);
-	/*else*/ col = vec4(1.);
+	vec3 inside_col = vec3(1.);
+	vec3 outside_col = vec3(0.3);
 
 	if(show_vel)
 	{
-		float vel = length(velocity);
-		float ratio = vel/arrow_max_vel;
+		vec3 vel_ratio = abs(velocity) / arrow_max_vel;
 
-		vec2 uv_dir = fs_uv/radius;
-
-		// Color the arrow with gradient based on velocity
-		if(arrow_dist(fs_uv, velocity.xy, arrow_max_vel) < ratio * 0.1)
-			col = vec4(
-					vec3(0., 0., 1.)*(1.-ratio) +
-					vec3(1., 0., 0.)*ratio, 
-			1.);
+		inside_col.x = vel_ratio.x;
+		inside_col.y = vel_ratio.y;
+		inside_col.z = vel_ratio.z;
 	}
 	if(show_accel)
 	{
-		float accel = length(acceleration);
-		float ratio = accel/arrow_max_accel;
+		vec3 acc_ratio = abs(acceleration) / arrow_max_accel;
 
-		vec2 uv_dir = fs_uv/radius;
-
-		// Color the arrow with gradient based on velocity
-		if(arrow_dist(fs_uv, acceleration.xy, arrow_max_accel) < accel/arrow_max_accel * 0.1)
-			col = vec4(0., clamp(ratio*0.8, 0., 1.), clamp(1.-ratio*0.8, 0., 1.), 1.);
+		outside_col.x = 1. - 1./acc_ratio.x;
+		outside_col.y = 1. - 1./acc_ratio.y;
+		outside_col.z = 1. - 1./acc_ratio.z;
 	}
+
+	col = vec4(
+			inside_col  * (1.-radius) +
+			outside_col * radius,
+			1.);
 }

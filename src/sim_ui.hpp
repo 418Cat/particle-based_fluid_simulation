@@ -23,6 +23,7 @@ class SimUI
 		bool show_all_particles = false;
 		int n_particles = 0;
 		bool clear_screen = true;
+		int col_type_selected = 0;
 		// ==============================
 
 	public:
@@ -65,55 +66,36 @@ class SimUI
 						ImGuiWindowFlags_NoMove
 			);
 
-			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(!sim->settings.run/2., sim->settings.run/2., 0., 1.));
-			if(ImGui::Button("Pause") && sim->settings.run) sim->settings.run = false;
-			ImGui::PopStyleColor();
-			ImGui::SameLine();
+			ImGui::BeginChild("Settings child",
+					ImVec2(
+						ImGui::GetContentRegionAvail().x*1.,
+						ImGui::GetContentRegionAvail().y*0.5));
+			ImGui::BeginTabBar("Components settings");
 
-			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(sim->settings.run/2., !sim->settings.run/2., 0., 1.));
-			if(ImGui::Button("Resume") && !sim->settings.run)
-				sim->run();
-
-			ImGui::PopStyleColor();
-			ImGui::SameLine();
-			ImGui::SliderFloat("Sim speed", &sim->settings.speed, 0., 2.);
-
-			ImGui::InputInt("N_particles", &n_particles);
-			if(ImGui::Button("Reset sim"))
+			if(ImGui::BeginTabItem("Sim settings"))
 			{
-				sim->reset(n_particles);
-				render->particles_buffers();
-			}
-			ImGui::Spacing();
-
-			ImGui::BeginTabBar("Debug tab bar");
-
-			if(ImGui::BeginTabItem("Settings"))
-			{
-				ImGui::SeparatorText("Simulation");
-				ImGui::SliderInt("Sim rate", (int*)&sim->settings.hertz, 1, 10000, "%d Hz");
-				ImGui::SliderInt("Number of threads", (int*)&sim->settings.n_threads, 1, max_threads);
-
-				ImGui::Spacing();
-				ImGui::Text("Bounding boxes XY");
-				ImGui::SliderInt("##BboxesX", (int*)(&sim->settings.n_bounding_boxes_x), 1, (int)floor(sim->settings.domain_size.x/(sim->settings.particle_radius*2.)));
-				ImGui::SliderInt("##BboxesY", (int*)(&sim->settings.n_bounding_boxes_y), 1, (int)floor(sim->settings.domain_size.y/(sim->settings.particle_radius*2.)));
-
-				ImGui::Spacing();
-				ImGui::Checkbox("Radial gravity", &sim->settings.domain_gravity_radial);
-				ImGui::SliderFloat3("Domain gravity, m/s", &sim->settings.domain_gravity.x, -40., 40.);
-				ImGui::Checkbox("Particles gravity", &sim->settings.particle_gravity);
+				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(!sim->settings.run/2., sim->settings.run/2., 0., 1.));
+				if(ImGui::Button("Pause") && sim->settings.run) sim->settings.run = false;
+				ImGui::PopStyleColor();
 				ImGui::SameLine();
-				ImGui::Checkbox("Inverse", &sim->settings.particles_gravity_inverse);
+
+				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(sim->settings.run/2., !sim->settings.run/2., 0., 1.));
+				if(ImGui::Button("Resume") && !sim->settings.run)
+					sim->run();
+
+				ImGui::PopStyleColor();
+				ImGui::SameLine();
+				//ImGui::SliderFloat("Sim speed", &sim->settings.speed, 0., 2.);
+				ImGui::InputDouble("Sim speed", &sim->settings.speed, 0.05); // DOUBLE
 
 				ImGui::Spacing();
-				ImGui::SliderFloat("Domain bounciness", &sim->settings.domain_bounciness, 0., 1.5);
-				ImGui::SliderFloat("Particles bounciness", &sim->settings.particles_bounciness, 0., 1.5);
-				ImGui::SliderFloat("Particle radius", &sim->settings.particle_radius, 0.01, 20.);
+				//ImGui::DragFloat3("Domain size", (float*)&sim->settings.domain_size, 1., 0.);
+				ImGui::Text("Domain size");
+				ImGui::InputDouble("X##domain size", &sim->settings.domain_size.x, 0.1);
+				ImGui::InputDouble("Y##domain size", &sim->settings.domain_size.y, 0.1);
+				ImGui::InputDouble("Z##domain size", &sim->settings.domain_size.z, 0.1);
 
 				ImGui::Spacing();
-				ImGui::DragFloat3("Domain size", (float*)&sim->settings.domain_size, 1., 0.);
-
 				if(ImGui::Button("Reset particles"))
 				{
 					bool was_running = sim->settings.run;
@@ -122,7 +104,80 @@ class SimUI
 					if(was_running) sim->run();
 				}
 
-				ImGui::SeparatorText("Display");
+				ImGui::Spacing();
+				ImGui::InputInt("N_particles", &n_particles);
+				if(ImGui::Button("Reset sim"))
+				{
+					sim->reset(n_particles);
+					render->particles_buffers();
+				}
+
+				ImGui::Spacing();
+
+				ImGui::SliderInt("Sim rate", (int*)&sim->settings.hertz, 1, 10000, "%d Hz");
+				ImGui::SliderInt("Number of threads", (int*)&sim->settings.n_threads, 1, max_threads);
+
+				ImGui::EndTabItem();
+			}
+
+			if(ImGui::BeginTabItem("Collisions"))
+			{
+				ImGui::Checkbox("Enable", &sim->settings.particles_collisions);
+
+				const char* col_types[] = {"Velocity", "Acceleration"};
+
+				if(ImGui::Combo("Collision type", &col_type_selected, col_types, 2))
+					sim->settings.collision_type = sim_state_t::p_collision_type_t(col_type_selected);
+
+				ImGui::Spacing();
+				ImGui::SeparatorText("Bounding boxes XY [TODO: 3D]");
+				ImGui::SliderInt("##BboxesX", (int*)(&sim->settings.n_bounding_boxes_x), 1, (int)floor(sim->settings.domain_size.x/(sim->settings.particle_radius*2.)));
+				ImGui::SliderInt("##BboxesY", (int*)(&sim->settings.n_bounding_boxes_y), 1, (int)floor(sim->settings.domain_size.y/(sim->settings.particle_radius*2.)));
+
+				ImGui::Spacing();
+				ImGui::Separator();
+				//ImGui::SliderFloat("Domain bounciness", &sim->settings.domain_bounciness, 0., 1.5);
+				//ImGui::SliderFloat("Particles bounciness", &sim->settings.particles_bounciness, 0., 1.5);
+				//ImGui::SliderFloat("Particle radius", &sim->settings.particle_radius, 0.01, 20.);
+				ImGui::InputDouble("Domain bounciness", &sim->settings.domain_bounciness, 0.05);
+				ImGui::InputDouble("Particles bounciness", &sim->settings.particles_bounciness, 0.05);
+				ImGui::InputDouble("Particles radius", &sim->settings.particle_radius, 0.05);
+				
+				ImGui::EndTabItem();
+			}
+
+			if(ImGui::BeginTabItem("Gravity"))
+			{
+				ImGui::SeparatorText("Domain gravity");
+				ImGui::Checkbox("X", &sim->settings.domain_gravity_axis[0]); ImGui::SameLine();
+				ImGui::Checkbox("Y", &sim->settings.domain_gravity_axis[1]); ImGui::SameLine();
+				ImGui::Checkbox("Z", &sim->settings.domain_gravity_axis[2]);
+				//ImGui::SliderFloat3("Domain gravity, m/s", &sim->settings.domain_gravity.x, -40., 40.);
+				ImGui::InputDouble("X##domain gravity", &sim->settings.domain_gravity.x, 0.1);
+				ImGui::InputDouble("Y##domain gravity", &sim->settings.domain_gravity.y, 0.1);
+				ImGui::InputDouble("Z##domain gravity", &sim->settings.domain_gravity.z, 0.1);
+
+				ImGui::Checkbox("Radial", &sim->settings.domain_gravity_radial);
+
+				ImGui::Spacing();
+				ImGui::SeparatorText("Particles gravity [Experimental]");
+				ImGui::Checkbox("Enabled", &sim->settings.particle_gravity);
+				ImGui::SameLine();
+				ImGui::Checkbox("Inverse", &sim->settings.particles_gravity_inverse);
+
+				ImGui::Spacing();
+				ImGui::SeparatorText("Octree [Experimental]");
+				//ImGui::DragFloat("Threshold", &sim->settings.volume_to_distance_threshold, sim->settings.volume_to_distance_threshold/10., 0., 1.e3, "%.5f");
+				ImGui::SliderInt("Max depth", (int*)&sim->settings.octree_max_depth, 0, 100);
+				ImGui::SliderInt("Min particles in node", (int*)&sim->settings.octree_min_particles_in_node, 1, 200);
+				//ImGui::DragFloat("Gravity factor", &sim->settings.particles_gravity_factor, sim->settings.particles_gravity_factor/10., 0., 1.e20);
+
+
+				ImGui::EndTabItem();
+			}
+
+			if(ImGui::BeginTabItem("Display"))
+			{
 				ImGui::DragFloat("FOV", &camera->fov, camera->fov/10., 1., 100.);
 
 				ImGui::Checkbox("Show##vel", &render->show_vel);
@@ -136,7 +191,7 @@ class SimUI
 				ImGui::Spacing();
 				ImGui::Checkbox("Show", &render->show_borders);
 				ImGui::SameLine();
-				ImGui::DragInt("Domain borders thickness", &render->border_size, 1, 1, 30);
+				ImGui::DragFloat("Domain borders size", &render->border_size, render->border_size/10., 0., 100., "%.0f %%");
 				
 				ImGui::Checkbox("Show##boxes lines", &render->show_boxes);
 				ImGui::SameLine();
@@ -145,9 +200,14 @@ class SimUI
 				ImGui::Spacing();
 				ImGui::Checkbox("Clear screen", &clear_screen);
 
+
 				ImGui::EndTabItem();
 			}
+			ImGui::EndTabBar();
+			ImGui::EndChild();
 
+
+			ImGui::BeginTabBar("Info");
 			if(ImGui::BeginTabItem("Info"))
 			{
 				ImGui::Text("Number of particles: %d", sim->n_particles());
@@ -229,6 +289,21 @@ class SimUI
 					}
 					ImGui::EndTable();
 				}
+				ImGui::EndTabItem();
+			}
+			if(ImGui::BeginTabItem("How to use"))
+			{
+				ImGui::SeparatorText("Camera movement");
+				ImGui::Text("Z: Forward");
+				ImGui::Text("S: Backwards");
+				ImGui::Text("Q: Left");
+				ImGui::Text("D: Right");
+				ImGui::Text("A: Up");
+				ImGui::Text("E: Down");
+
+				ImGui::Text("Left SHIFT to increase movement speed");
+				ImGui::Spacing();
+				ImGui::Text("Click + drag to rotate camera [Small bugfix needed]");
 
 				ImGui::EndTabItem();
 			}

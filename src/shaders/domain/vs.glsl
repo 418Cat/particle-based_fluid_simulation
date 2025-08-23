@@ -1,21 +1,18 @@
 #version 460 core
 
-layout (location=0) in vec2 vs_pos;
+layout (location=0) in vec3 vs_pos;
 
-uniform vec2 domain_size;
-uniform vec2 window_size;
-uniform float zoom;
-uniform float border_size;
+uniform vec3 domain_size;
+uniform mat4 view_mat;
+uniform mat4 project_mat;
 
-out vec2 vs_uv;
+out vec3 vs_uv;
 
 void main()
 {
-	gl_Position = vec4(
-			zoom *
-			(
-				vs_pos / (window_size/domain_size)
-			) * (2.+border_size/window_size) - 1.
-	, 0., 1.);
+	gl_Position =
+		project_mat * view_mat *
+		vec4((vs_pos/2.+.5)*domain_size, 1.);
+
 	vs_uv = vs_pos;
 }

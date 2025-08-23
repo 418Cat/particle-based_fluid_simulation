@@ -1,6 +1,7 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
+#include <cstdlib>
 #include <iostream>
 
 #include "glm.hpp"
@@ -10,37 +11,76 @@
 
 #include "memory.h"
 
-using glm::vec3, glm::mod;
+using glm::mod, glm::dvec3;
+
+// Easy precision change
+#define num double
+#define vec3 dvec3
 
 struct particle_t
 {
-	vec3 position = vec3(1., 1., 1.);
-	vec3 velocity = vec3(0., 0., 0.);
-	vec3 acceleration = vec3(0., 0., 0.);
-	float mass = 1.;
+	vec3 position 		= vec3(1.);
+	vec3 velocity 		= vec3(0.);
+	vec3 acceleration 	= vec3(0.);
+	num mass 			= 1.;
+};
+
+struct tree_node_t
+{
+	num mass = 0.;
+	unsigned int n_p = 0;
+	particle_t** contained_p = NULL;// Must only contain particles
+									// if node is LEAF or is being
+									// built
+
+	vec3 center_of_mass = vec3(0.);
+
+	vec3 coords = vec3(0.);
+	vec3 size = vec3(0.);
+	num volume = 0.;
+
+	tree_node_t* parent = NULL;
+	tree_node_t* children = NULL; // Array of size 8
+
+	enum type_t
+	{
+		ROOT,	// Doesn't have parents but has children
+		BRANCH, // Has both 
+		LEAF,	// Doesn't have children
+		EMPTY, 	// Has no particles (So no children)
+	} type;
+};
+
+struct octree_state_t
+{
+	unsigned int max_depth = 5;
+	unsigned int min_p_in_node = 4;
+
+	// (Gotta find a better name)
+	// Threshold above which particles_gravity()
+	// goes down one level deeper in the tree, based
+	// on the ratio between the volume of the node and
+	// the distance of the node's center of mass
+	// from the particle
+	num vol_dit_thresh = 0.01;
+	num gravity_factor = 1.e10;
+	tree_node_t* root;
 };
 
 struct domain_t
 {
 	vec3 size = vec3(500., 500., 500.);
 	bool radial_gravity = false;
+	bool gravity_axis[3] = {false, true, false};
 	vec3 gravity = vec3(0., -9.81, 0.);
-	float bounciness = .9;
+	num bounciness = .9;
 };
 
 struct sim_state_t
 {
 	unsigned int n_threads;
 
-	// Number of ticks
-	unsigned int iteration = 0;
-	
-	// One day I'll understand how std::chrono works
-	// with the ratios and type annotations
-	//std::chrono::duration<>();
-	float sim_seconds = 0.; // Number of seconds since sim start
-
-	float delta_t = 0.;
+	num delta_t = 0.;
 	std::chrono::time_point<std::chrono::high_resolution_clock> last_update = std::chrono::high_resolution_clock::now();
 
 	domain_t domain;
@@ -48,10 +88,18 @@ struct sim_state_t
 	particle_t* particles;
 	particle_t* buff_particles;
 	unsigned int n_particles;
-	float p_radius = 1.;
-	float p_bounciness = 0.9;
-	bool p_gravity = false;
-	bool p_gravity_inverse = false;
+
+	bool p_collisions;
+	enum p_collision_type_t 
+	{
+		VELOCITY,
+		ACCELERATION
+	} p_collision_type;
+	num p_radius;
+	num p_bounciness;
+
+	bool p_gravity;
+	bool p_gravity_inverse;
 };
 
 struct bounding_boxes_t
@@ -71,44 +119,58 @@ struct settings_t
 {
 	bool run = false;
 	unsigned int n_threads = 4;
-	unsigned int hertz = 300;
+	unsigned int hertz = 1500;
 
-	float speed = 1.;
+	num speed = 1.;
 
-	unsigned int n_bounding_boxes_x = 1;
-	unsigned int n_bounding_boxes_y = 1;
+	unsigned int n_bounding_boxes_x = 20;
+	unsigned int n_bounding_boxes_y = 20;
 
-	vec3 domain_size = vec3(500., 500., 500.);
-	float domain_bounciness = 0.9;
+	vec3 domain_size = vec3(200., 200., 200.);
+	num domain_bounciness = 0.85;
 	vec3 domain_gravity = vec3(0., -9.81, 0.);
+	bool domain_gravity_axis[3] = {false, true, false};
 	bool domain_gravity_radial = false;
 
-	float particle_radius = 1.;
-	float particles_bounciness = 0.9;
+	bool particles_collisions = true;
+	sim_state_t::p_collision_type_t collision_type = sim_state_t::VELOCITY;
+	num particle_radius = 1.;
+	num particles_bounciness = 0.99;
 	bool particle_gravity = false;
+	num particles_gravity_factor = 1.e10;
 	bool particles_gravity_inverse = false;
+
+	unsigned int octree_max_depth = 7;
+	num volume_to_distance_threshold = 0.5;
+	unsigned int octree_min_particles_in_node = 4;
 };
 
 class Simulation
 {
 	private:
 		std::thread t;
-		bounding_boxes_t bboxes;
 		sim_state_t state;
+
+		bounding_boxes_t bboxes;
+		octree_state_t octree_state;
 
 	public:
 		settings_t settings;
 
 		// Acts as public access to particles data
 		particle_t* particles;
+		tree_node_t* octree_root;
 
 		void update_settings()
 		{
 			state.domain.size 			= settings.domain_size;
 			state.domain.bounciness 	= settings.domain_bounciness;
 			state.domain.gravity 		= settings.domain_gravity;
+			for(int i = 0; i < 3; i++) state.domain.gravity_axis[i] = settings.domain_gravity_axis[i];
 			state.domain.radial_gravity = settings.domain_gravity_radial;
 
+			state.p_collisions = settings.particles_collisions;
+			state.p_collision_type = settings.collision_type;
 			state.p_radius 		= settings.particle_radius;
 			state.p_bounciness 	= settings.particles_bounciness;
 
@@ -135,22 +197,26 @@ class Simulation
 
 			state.p_gravity = settings.particle_gravity;
 			state.p_gravity_inverse = settings.particles_gravity_inverse;
+
+			octree_state.gravity_factor = settings.particles_gravity_factor;
+			octree_state.max_depth = settings.octree_max_depth;
+
+			octree_state.vol_dit_thresh = settings.volume_to_distance_threshold;
+			octree_state.min_p_in_node = settings.octree_min_particles_in_node;
 		}
 
 		const unsigned int& n_particles()
 			{return state.n_particles;}
 
-		const float& sim_tick_time()
+		const num& sim_tick_time()
 			{return state.delta_t;}
 
 		void spawn_particles_as_rect()
 		{
-			float side_length = ceil(powf(state.n_particles, 1./3.));
-			float dx = state.domain.size.x/side_length;
-			float dy = state.domain.size.y/side_length;
-			float dz = state.domain.size.z/side_length;
-
-			std::cout << "Domain size z: " << state.domain.size.z << std::endl;
+			num side_length = ceil(powf(state.n_particles, 1./3.));
+			num dx = state.domain.size.x/side_length;
+			num dy = state.domain.size.y/side_length;
+			num dz = state.domain.size.z/side_length;
 
 			for(int i = 0; i < state.n_particles; i++)
 			{
@@ -159,12 +225,12 @@ class Simulation
 				*p = particle_t();
 
 				p->position = vec3(
-					mod((float)i, side_length) * dx + state.p_radius,
+					mod((num)i, side_length) * dx + state.p_radius,
 					(int)mod(i/side_length, side_length) * dy + state.p_radius,
 					(int)(i/(side_length*side_length)) * dz + state.p_radius
 				);
 
-				p->velocity = p->position - state.domain.size / 2.f;
+				p->velocity = p->position - state.domain.size / 2.;
 				p->mass = 1.;
 
 				state.buff_particles[i] = *p;
@@ -172,39 +238,85 @@ class Simulation
 			}
 		}
 
-		void domain_gravity(particle_t* n_p, particle_t* p)
+		void domain_interactions(particle_t* n_p, particle_t* p)
 		{
 			if(state.domain.radial_gravity)
 			{
-				vec3 to_center = state.domain.size/2.f - n_p->position;
+				vec3 to_center = state.domain.size/2. - n_p->position;
 
-				float distance = glm::length(to_center);
-				float gravity_norm = glm::length(state.domain.gravity);
+				num dist = distance(p->position, state.domain.size/2.);
 
-				if(distance == 0.) distance = 0.01;
-				to_center *= gravity_norm / distance;
+				num gravity_norm = sqrt(
+					(state.domain.gravity_axis[0] ? glm::abs(state.domain.gravity.x) : 0.) +
+					(state.domain.gravity_axis[1] ? glm::abs(state.domain.gravity.y) : 0.) +
+					(state.domain.gravity_axis[2] ? glm::abs(state.domain.gravity.z) : 0.)
+				);
 
-				n_p->acceleration += to_center;
+				if(dist == 0.) dist = 0.01;
+				to_center *= gravity_norm / dist;
+
+				n_p->acceleration += to_center / n_p->mass;
 			}
 			else
-				n_p->acceleration += state.domain.gravity;
+				n_p->acceleration += vec3(
+					state.domain.gravity_axis[0] ? state.domain.gravity.x : 0.,
+					state.domain.gravity_axis[1] ? state.domain.gravity.y : 0.,
+					state.domain.gravity_axis[2] ? state.domain.gravity.z : 0.
+				);
 
 
+			// Sphere shaped domain ______________________________________________
+			//double radius = 50.;
+
+			//double dist_x = p->position.x - state.domain.size.x/2.;
+			//double dist_y = p->position.y - state.domain.size.y/2.;
+			//double dist_z = p->position.z - state.domain.size.z/2.;
+
+			//double dist_sqrd = dist_x*dist_x + dist_y*dist_y + dist_z*dist_z;
+
+			//if(dist_sqrd > radius*radius)
+			//{
+			//	double dist = sqrt(dist_sqrd);
+
+			//	vec3 normal = p->position - state.domain.size/2.;
+			//	normal /= dist;
+
+			//	p->position = state.domain.size/2. + normal * radius;
+
+			//	double dot_pos_norm = dot(normal, p->velocity);
+			//	p->velocity -= 2.*normal*dot_pos_norm;
+			//	p->velocity *= state.domain.bounciness;
+			//}
+			// ___________________________________________________________________
+
+			// For every component of the position, check if out of domain
+			for(int i = 0; i < 3; i++)
+			{
+				num* p_pos   = &((num*)&(n_p->position))[i];
+				num* p_vel   = &((num*)&(n_p->velocity))[i];
+				num* p_accel = &((num*)&(n_p->acceleration))[i];
+
+				num* w_coord = &((num*)&(state.domain.size))[i];
+
+				// Outer wall check
+				if(*p_pos >  *w_coord - state.p_radius)
+				{
+					*p_accel = 0.;
+					*p_vel  *= -state.domain.bounciness;
+					*p_pos   = *w_coord - state.p_radius;
+				}
+
+				if(*p_pos < state.p_radius)
+				{
+					*p_accel = 0.;
+					*p_vel  *= -state.domain.bounciness;
+					*p_pos   = state.p_radius;
+				}
+			}
 		}
 
-		void particles_interactions(particle_t* A, particle_t* old_A)
+		void particles_collision(particle_t* A, particle_t* old_A)
 		{
-
-			/*--------------*\
-			 * 1- Collision	*
-			 * 2- Gravity	*
-			\*--------------*/ 
-
-			/*------------------------------------*\
-			 * 1- This section handles mechanical *
-			 * interactions between particles	  *
-			\*------------------------------------*/ 
-
 			// Position in bounding boxes
 			int A_x = (int)(A->position.x/state.domain.size.x * bboxes.nbx);
 			int A_y = (int)(A->position.y/state.domain.size.y * bboxes.nby);
@@ -226,8 +338,8 @@ class Simulation
 						particle_t* B = bboxes.p_per_b[B_xy][p_i];
 
 						// Early continue with cheap test
-						float delta_x = A->position.x - B->position.x;
-						float delta_y = A->position.y - B->position.y;
+						num delta_x = A->position.x - B->position.x;
+						num delta_y = A->position.y - B->position.y;
 						if(	delta_x >  2.*state.p_radius ||
 							delta_x < -2.*state.p_radius ||
 							delta_y >  2.*state.p_radius ||
@@ -240,112 +352,107 @@ class Simulation
 						// normal to the surface of both
 						vec3 normal = A->position - B->position;
 
-						// Squared distance for the test
-						float dist = normal.x*normal.x + normal.y*normal.y + normal.z*normal.z;
-						if(dist == 0.) dist = 0.01;
+						// Squared distance for the test to avoid expensive sqrt
+						num dist_sqrd = normal.x*normal.x + normal.y*normal.y + normal.z*normal.z;
+						if(dist_sqrd == 0.) dist_sqrd = 0.01;
 						
 						// Collision happens, test with (2*p_radius)² since
-						// dist is the distance squared
-						if(dist < 4.*state.p_radius*state.p_radius)
+						if(dist_sqrd < 4.*state.p_radius*state.p_radius)
 						{
 							// The actual distance is needed,
 							// no choice about using square root
-							dist = sqrt(dist);
+							num dist = sqrt(dist_sqrd);
 
 							// Normalize
 							normal /= dist;
 
-							// Mirror the relative velocity (B_vel - A_vel) from the normal vector and dampen the bounce
-							A->velocity -= normal * dot(A->velocity - B->velocity, normal)*state.p_bounciness;
+							// Mirror the relative velocity (B_vel - A_vel) from 
+							// the normal vector and dampen the bounce
+							vec3 delta_vel = -normal * dot(A->velocity - B->velocity, normal) * state.p_bounciness;
 
+							if(state.p_collision_type == sim_state_t::VELOCITY)
+							{
+								A->velocity += delta_vel;
+							}
+							else if(state.p_collision_type == sim_state_t::ACCELERATION)
+							{
+								// Add the derivative to the acceleration
+								A->acceleration += delta_vel / state.delta_t;
+							}
+
+							std::flush(std::cout);
+							
 							// A is inside B's radius, move it out
-							A->position -= normal * (dist - 2.f * state.p_radius);
+							A->position += -normal*(dist - 2. * state.p_radius);
+
+							// If A too close from B, move in a random direction
+							// TODO: Make this vector always be of length 1
+							// without using expensive operations like sqrt
+							// other TODO: Check if rand() is expensive
+							if(dist <= state.p_radius * 0.5)
+								A->position += vec3(
+										(num)std::rand() / RAND_MAX * state.p_radius,
+										(num)std::rand() / RAND_MAX * state.p_radius,
+										(num)std::rand() / RAND_MAX * state.p_radius
+								);
 						}
 					}
 				}
 			}
+		}
 
+		vec3 particles_gravity(particle_t* A, tree_node_t* N, unsigned int depth=0)
+		{
+			if(N->type == tree_node_t::EMPTY) return vec3(0.);
 
+			const num G = 6.6743e-11 * octree_state.gravity_factor *
+				(state.p_gravity_inverse ? -1. : 1.);
 
+			vec3 normal = N->center_of_mass - A->position;
+			num dist = length(normal);
 
-			/*----------------------------------------*\
-			 * 2- This section handles gravitationnal *
-			 * interactions between particles		  *
-			\*----------------------------------------*/ 
+			// Node is far enough, use center of mass and total mass
+			if(N->volume / dist < octree_state.vol_dit_thresh)
+			{
+				return normal * G * (A->mass*N->mass)/(dist*dist);
+			}
+
+			vec3 total_gravity = vec3(0.);
+
+			// Node doesn't have any children, iterate particles
+			if(N->type == tree_node_t::LEAF)
+			{
+				for(int p_i = 0; p_i < N->n_p; p_i++)
+				{
+					particle_t* B = N->contained_p[p_i];
+
+					if(A == B) continue;
+
+					normal = B->position - A->position;
+					dist = length(normal);
+
+					total_gravity += normal * G * (A->mass*B->mass)/(dist*dist);
+				}
+
+				return total_gravity;
+			}
+
+			for(int n_i = 0; n_i < 8; n_i++)
+			{
+				total_gravity += particles_gravity(A, &(N->children[n_i]), depth+1);
+			}
+
+			return total_gravity;
+		}
+
+		void particles_interactions(particle_t* A, particle_t* old_A)
+		{
+			if(state.p_collisions)
+				particles_collision(A, old_A);
 
 			if(state.p_gravity)
-			{
-				vec3 total_gravity = vec3(0., 0., 0.);
-				float G = 6.6743e-11;
-				if(state.p_gravity_inverse) G *= -1.;
-
-				for(int p_i = 0; p_i < state.n_particles; p_i++)
-				{
-					particle_t* B = &state.particles[p_i];
-
-					if(B == old_A) continue;
-					vec3 normal = B->position - old_A->position;
-					float dist = length(normal);
-					normal /= dist;
-
-					total_gravity += normal * G*(old_A->mass * B->mass * 1.e13f)/(dist*dist);
-				}
-				A->acceleration += total_gravity;
-			}
-
+				A->acceleration += particles_gravity(old_A, octree_state.root);
 		}
-
-		void domain_boundaries(particle_t* p)
-		{
-			// Floor & Ceiling
-			if(p->position.y < state.p_radius)
-			{
-				//if(p->acceleration.y < 0.) p->acceleration.y = -p->acceleration.y;
-
-				p->velocity.y = -p->velocity.y * state.domain.bounciness;
-				p->position.y = state.p_radius;
-			}
-			if(p->position.y > state.domain.size.y - state.p_radius)
-			{
-				//if(p->acceleration.y > 0.) p->acceleration.y = -p->acceleration.y;
-
-				p->velocity.y = -p->velocity.y * state.domain.bounciness;
-				p->position.y = state.domain.size.y - state.p_radius;
-			}
-
-			// X walls
-			if(p->position.x < state.p_radius)
-			{
-				//if(p->acceleration.x < 0.) p->acceleration.x = -p->acceleration.x;
-
-				p->velocity.x = -p->velocity.x * state.domain.bounciness;
-				p->position.x = state.p_radius;
-			}
-			if(p->position.x > state.domain.size.x - state.p_radius)
-			{
-				//if(p->acceleration.x > 0.) p->acceleration.x = -p->acceleration.x;
-
-				p->velocity.x = -p->velocity.x * state.domain.bounciness;
-				p->position.x = state.domain.size.x - state.p_radius;
-			}
-
-			// Z walls
-			if(p->position.z < state.p_radius)
-			{
-				//if(p->acceleration.z < 0.) p->acceleration.z = -p->acceleration.z;
-
-				p->velocity.z = -p->velocity.z * state.domain.bounciness;
-				p->position.z = state.p_radius;
-			}
-			if(p->position.z > state.domain.size.z - state.p_radius)
-			{
-				//if(p->acceleration.z > 0.) p->acceleration.z = -p->acceleration.z;
-
-				p->velocity.z = -p->velocity.z * state.domain.bounciness;
-				p->position.z = state.domain.size.z - state.p_radius;
-			}
-		}
-
 
 		Simulation(int n_particles)
 		{
@@ -355,6 +462,10 @@ class Simulation
 			state.buff_particles= (particle_t*)malloc(sizeof(particle_t)*n_particles);
 			state.n_particles 	= n_particles;
 
+			octree_state.root = new tree_node_t;
+			octree_root = new tree_node_t;
+
+			update_settings();
 			spawn_particles_as_rect();
 		}
 
@@ -396,7 +507,7 @@ class Simulation
 			{
 				while(settings.run)
 				{
-					auto sleep_time = 1.e9 * std::chrono::nanoseconds(1) / ((float)settings.hertz);
+					auto sleep_time = 1.e9 * std::chrono::nanoseconds(1) / ((num)settings.hertz);
 
 					// Sleep until it's time to tick() again, based on settings.hertz
 					std::this_thread::sleep_until(state.last_update + sleep_time);
@@ -409,6 +520,145 @@ class Simulation
 		{
 			settings.run = false;
 			if(t.joinable()) t.join();
+		}
+
+		void build_octree(tree_node_t* node, unsigned int current_depth=0)
+		{
+			unsigned int allocated_p = 0;
+
+			if(node->type == tree_node_t::ROOT)
+			{
+				octree_state.root->contained_p = (particle_t**)malloc(sizeof(particle_t*)*state.n_particles);
+
+				// Fill octree root with pointers to particles
+				for(int p_i = 0; p_i < state.n_particles; p_i++) octree_state.root->contained_p[p_i] = &state.particles[p_i];
+
+				node->size = state.domain.size;
+				node->volume = state.domain.size.x * state.domain.size.y * state.domain.size.z;
+				node->n_p = state.n_particles;
+			}
+
+			node->children = new tree_node_t[8];
+
+			vec3 size = node->size / 2.;
+
+			for(unsigned int x = 0; x < 2; x++)
+			{
+				for(unsigned int y = 0; y < 2; y++)
+				{
+					for(unsigned int z = 0; z < 2; z++)
+					{
+						node->children[x*4+y*2+z] = tree_node_t
+						{
+							.mass = 0.,
+							.n_p = 0,
+							.contained_p = NULL,
+							.coords = node->coords + vec3(x,y,z)*size,
+							.size = size,
+							.volume = size.x*size.y*size.z,
+							.parent = node,
+							.children = NULL,
+						};
+
+						tree_node_t* curr_node = &node->children[x*4+y*2+z];
+
+						// Alloc for worst case scenario, all 
+						// particles from parent not yet
+						// allocated are in the current node
+						curr_node->contained_p = (particle_t**)malloc(
+								(node->n_p - allocated_p) * sizeof(particle_t)
+						);
+
+						// Still need to iterate on the parent's list
+						for(int p_i = 0; p_i < node->n_p; p_i++)
+						{
+							particle_t* p = node->contained_p[p_i];
+
+							// If particle is already allocated
+							// in other child, continue
+							if(p == NULL) continue;
+
+							bool is_in_node =
+								p->position.x >= curr_node->coords.x &&
+								p->position.y >= curr_node->coords.y &&
+								p->position.x < curr_node->coords.x + curr_node->size.x &&
+								p->position.y < curr_node->coords.y + curr_node->size.y;
+
+							if(is_in_node)
+							{
+								// Add to child
+								curr_node->contained_p[curr_node->n_p] = p;
+								curr_node->mass += p->mass;
+
+								// Weighted center of mass (literally)
+								curr_node->center_of_mass +=
+									p->position*p->mass / curr_node->mass;
+
+								// Remove from parent
+								node->contained_p[p_i] = NULL;
+
+								curr_node->n_p++;
+							}
+						}
+						
+						if(curr_node->n_p == 0)
+						{
+							free(curr_node->contained_p);
+							curr_node->type = tree_node_t::EMPTY;
+							continue;
+						}
+
+						if(curr_node->n_p <= octree_state.min_p_in_node || current_depth >= octree_state.max_depth)
+						{
+							curr_node->type = tree_node_t::LEAF;
+
+							// Resize to fit the actual number of particles in node
+							curr_node->contained_p = (particle_t**)realloc(
+									curr_node->contained_p,
+									curr_node->n_p * sizeof(particle_t)
+							);
+						}
+						else
+						{
+							curr_node->type = tree_node_t::BRANCH;
+							build_octree(curr_node, current_depth+1);
+						}
+
+
+						allocated_p += curr_node->n_p;
+					} // z
+				} // y
+			} // x
+
+			// Only leaf nodes point to particles
+			free(node->contained_p);
+		}
+
+		void destroy_octree(tree_node_t* node)
+		{
+			for(int n_i = 0; n_i < 8; n_i++)
+			{
+				tree_node_t* curr_node = &node->children[n_i];
+
+				switch(curr_node->type)
+				{
+				// Has kids
+				case tree_node_t::ROOT:
+				case tree_node_t::BRANCH:
+					destroy_octree(curr_node);
+					delete curr_node->children;
+					break;
+
+				// Has particles
+				case tree_node_t::LEAF:
+					free(curr_node->contained_p);
+					break;
+
+				// Has none of those
+				case tree_node_t::EMPTY:
+					break;
+				}
+			}
 		}
 
 		void build_bounding_boxes()
@@ -485,16 +735,19 @@ class Simulation
 		{
 			auto now = std::chrono::high_resolution_clock::now();
 			state.delta_t = (now - state.last_update).count() / 1.e9; 	// count gives nanoseconds, *1e9 to get seconds
-			float delta_t = state.delta_t * settings.speed; 			// Scale this tick's delta_t depending on sim speed
+			num delta_t = state.delta_t * settings.speed; 			// Scale this tick's delta_t depending on sim speed
 			state.last_update = now;
 
 			update_settings();
-			build_bounding_boxes();
+			if(state.domain.bounciness) build_bounding_boxes();
+
+			octree_state.root->type = tree_node_t::ROOT;
+			if(state.p_gravity) build_octree(octree_state.root);
 
 			std::thread ts[state.n_threads];
 
 			// Ceil to get every particles in case it's not round
-			int p_per_thread = ceil((float)state.n_particles/(float)state.n_threads);
+			int p_per_thread = ceil((num)state.n_particles/(num)state.n_threads);
 
 			// For every thread
 			// Gotta pass t_i by value, else it'll continue changing while the thread is running
@@ -503,51 +756,19 @@ class Simulation
 				// Iterate on a given list of particles
 				for(int p_i = t_i*p_per_thread; p_i < (t_i+1)*p_per_thread && p_i < state.n_particles; p_i++)
 				{
-					/*
-					 * If the order stays the same, some particles
-					 * will have collision checks before later ones,
-					 * which will move them always in the same order
-					 * and can lead to those being stuck.
-					 * Every two steps, invert the iteration order
-					 * to try to reduce this effect
-					 */
-					int i = p_i;
-					if(mod((float)state.iteration, 2.f) < 1.)
-						i = state.n_particles - p_i - 1;
+					particle_t* n_p = &state.buff_particles[p_i];
+					particle_t* p = &state.particles[p_i];
 
-					particle_t* n_p = &state.buff_particles[i];
-					particle_t* p = &state.particles[i];
-
-					n_p->mass = p->mass;
-					n_p->position = p->position;
-					n_p->velocity = p->velocity;
+					*n_p = *p;
 					n_p->acceleration = vec3(0., 0., 0.); // Reset acceleration each frame
 
-					// Assuming gravity is the only force acting on particles:
-					// The following formula gives the analytic solution to the
-					// particle's position
-					// a(t) = g
-					// v(t) = V0 + g*t
-					// p(t) = P0 + V0*t + g/2*t²
-					//
-					// To take into account force changes and collision, the sim cannot
-					// use the analytic solution, so using the formula above, it gives:
-					// v(t) = v(t-1) + a(t)*t
-					// p(t) = p(t-1) + v(t)*t
-					//
-					// a(t) is known on time but cannot be predicted (without running the sim in advance)
-					// a(t) in the first line and v(t) in the second are treated as if they
-					// are constant in the interval (t, t+1). The higher the tickrate, the 
-					// more accurate the sim will be as this interval will be reduced
-
 					particles_interactions(n_p, p);
-					domain_gravity(n_p, p);
-					domain_boundaries(n_p);
+					domain_interactions(n_p, p);
 
-					n_p->velocity += n_p->acceleration * (float)delta_t;		//  v(t-1) + a(t)*t
-					n_p->position += n_p->velocity * (float)delta_t; 					//  p(t-1) + v(t)*t
-					
-					particles[i] = *p;
+					n_p->velocity += n_p->acceleration * (num)delta_t;		//  v(t-1) + a(t)*t
+					n_p->position += n_p->velocity * (num)delta_t; 			//  p(t-1) + v(t)*t
+
+					particles[p_i] = *p;
 				}
 			});
 
@@ -555,12 +776,15 @@ class Simulation
 			for(int t_i= 0; t_i < state.n_threads; t_i++)
 				ts[t_i].join();
 
+			tree_node_t* last_frame_root = octree_root;
+			octree_root = octree_state.root;
+			octree_state.root = octree_root;
+			if(state.p_gravity) destroy_octree(octree_state.root);
+
 			// Swap both particle buffers
 			particle_t* last_frame_data = state.particles;
 			state.particles = state.buff_particles;
 			state.buff_particles = last_frame_data;
-
-			state.iteration++;
 		}
 
 		~Simulation()
@@ -578,6 +802,9 @@ class Simulation
 
 			// Free number of particles per bounding box
 			free(bboxes.n_p_per_b);
+
+			delete octree_state.root;
+			//delete octree_root;
 
 			free(particles);
 			free(state.particles);

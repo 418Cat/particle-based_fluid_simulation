@@ -26,12 +26,18 @@ class Render
 		unsigned int domain_ebo;
 		unsigned int domain_vbo;
 
+		unsigned int boxes_vao;
+		unsigned int boxes_ebo;
+		unsigned int boxes_vbo;
+
 		Shader* particles_shaders = NULL;
 		Shader* domain_shaders = NULL;
 
 		GLFWwindow* window = NULL;
 
-		float tri[8] = 
+		glm::mat4 project_mat = glm::perspectiveFov(70., 10., 10., 0.1, 100.);
+
+		float quad_vert[8] = 
 		{
 			-1.f, -1.f,
 			 1.f, -1.f,
@@ -39,10 +45,50 @@ class Render
 			-1.f,  1.f,
 		};
 
-		unsigned int indices[6] =
+		unsigned int quad_ind[6] =
 		{
 			0, 1, 3,
 			1, 2, 3
+		};
+
+
+		float cube_vert[24]
+		{
+			-1, -1,  1, //0
+			 1, -1,  1, //1
+			-1,  1,  1, //2
+			 1,  1,  1, //3
+			-1, -1, -1, //4
+			 1, -1, -1, //5
+			-1,  1, -1, //6
+			 1,  1, -1  //7
+		};
+
+		unsigned int cube_ind[36]
+		{
+			//Top
+			2, 6, 7,
+			2, 3, 7,
+
+			//Bottom
+			0, 4, 5,
+			0, 1, 5,
+
+			//Left
+			0, 2, 6,
+			0, 4, 6,
+
+			//Right
+			1, 3, 7,
+			1, 5, 7,
+
+			//Front
+			0, 2, 3,
+			0, 1, 3,
+
+			//Back
+			4, 6, 7,
+			4, 5, 7
 		};
 
 		Simulation* simulation;
@@ -59,7 +105,7 @@ class Render
 		float arrow_max_accel = 20.;
 
 		bool show_borders = true;
-		int border_size = 1;
+		float border_size = 1.;
 		bool show_boxes = true;
 		int box_line_size = 1;
 
@@ -103,8 +149,71 @@ class Render
 		{
 			glfwGetWindowSize(this->window, &win_x, &win_y);
 
+			project_mat = glm::perspectiveFov(camera->fov*glm::pi<float>()/180.f, (float)win_x, (float)win_y, 0.1f, 1000.f);
+
 			draw_domain();
 			draw_particles();
+			//boxes_buffers(); // Causes issues when called each frame, gotta rewrite this class
+		}
+
+		void boxes_buffers()
+		{
+			glGenVertexArrays(1, &boxes_vao);
+			glGenBuffers(1, &boxes_vbo);
+			glGenBuffers(1, &boxes_ebo);
+
+			glBindVertexArray(boxes_vao);
+
+
+			glBindBuffer(GL_ARRAY_BUFFER, boxes_vao);
+			glBufferData(GL_ARRAY_BUFFER, 24*sizeof(float), cube_vert, GL_STATIC_DRAW);
+
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, boxes_ebo);
+			glBufferData(GL_ELEMENT_ARRAY_BUFFER, 16*sizeof(unsigned int), cube_ind, GL_STATIC_DRAW);
+
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+			glEnableVertexAttribArray(0);
+
+			int n_boxes = 0;
+			std::function<void(tree_node_t*)> count_boxes;
+
+			count_boxes = [&count_boxes, &n_boxes](tree_node_t* node)
+			{
+				for(int n_i = 0; n_i < 8; n_i++)
+				{
+					std::cout << "Depth " << n_i << std::endl;
+					tree_node_t* curr_node = &node->children[n_i];
+					std::cout << "Got node " << n_i << (curr_node == NULL ? ", is NULL" : "") << std::endl;
+					std::cout << "Starting switch" << std::endl;
+					
+					switch(curr_node->type)
+					{
+					case tree_node_t::ROOT:
+						std::cout << "Node type: ROOT" << std::endl;
+						count_boxes(curr_node);
+						n_boxes++;
+						break;
+
+					case tree_node_t::BRANCH:
+						std::cout << "Node type: BRANCH" << std::endl;
+						count_boxes(curr_node);
+						n_boxes++;
+						break;
+
+					case tree_node_t::LEAF:
+						std::cout << "Node type: LEAF" << std::endl;
+						n_boxes++;
+						break;
+					
+					case tree_node_t::EMPTY:
+						std::cout << "Node type: EMPTY" << std::endl;
+						break;
+					}
+				}
+			};
+			//count_boxes(simulation->octree_root);
+
+			//std::cout << "Sim has " << n_boxes << " boxes" << std::endl;
 		}
 
 		void domain_buffers()
@@ -116,13 +225,13 @@ class Render
 			glBindVertexArray(domain_vao);
 
 			glBindBuffer(GL_ARRAY_BUFFER, domain_vbo);
-			glBufferData(GL_ARRAY_BUFFER, sizeof(tri), tri, GL_STATIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(cube_vert), cube_vert, GL_STATIC_DRAW);
 
 			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, domain_ebo);
-			glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+			glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(cube_ind), cube_ind, GL_STATIC_DRAW);
 
-			// First attribute is the vertex's position for the plane
-			glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+			// First attribute is the vertex's position for the cube
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 			glEnableVertexAttribArray(0);
 		}
 
@@ -132,9 +241,10 @@ class Render
 
 			domain_shaders->use();
 
-			domain_shaders->setVec2("domain_size",
+			domain_shaders->setVec3("domain_size",
 					simulation->settings.domain_size.x,
-					simulation->settings.domain_size.y
+					simulation->settings.domain_size.y,
+					simulation->settings.domain_size.z
 			);
 
 			domain_shaders->setVec2("window_size",
@@ -142,18 +252,12 @@ class Render
 					win_y
 			);
 
-			domain_shaders->setVec2("n_bounding_boxes",
-					simulation->settings.n_bounding_boxes_x,
-					simulation->settings.n_bounding_boxes_y
-			);
-
 			domain_shaders->setBool("show_borders", this->show_borders);
-			domain_shaders->setFloat("border_size", this->border_size);
+			domain_shaders->setFloat("border_size", this->border_size/100.);
+			domain_shaders->setMat4("view_mat", (float*)glm::value_ptr(camera->view_mat()));
+			domain_shaders->setMat4("project_mat", (float*)glm::value_ptr(project_mat));
 
-			domain_shaders->setBool("show_boxes", this->show_boxes);
-			domain_shaders->setFloat("box_line_size", this->box_line_size);
-
-			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+			glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
 		}
 
 		void particles_buffers()
@@ -166,10 +270,10 @@ class Render
 			glBindVertexArray(particles_vao);
 
 			glBindBuffer(GL_ARRAY_BUFFER, particles_vbo);
-			glBufferData(GL_ARRAY_BUFFER, sizeof(tri), tri, GL_STATIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vert), quad_vert, GL_STATIC_DRAW);
 
 			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, particles_ebo);
-			glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+			glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(quad_ind), quad_ind, GL_STATIC_DRAW);
 
 			// First attribute is the vertex's position for the plane
 			glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
@@ -180,15 +284,15 @@ class Render
 			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles()*sizeof(particle_t), NULL, GL_DYNAMIC_DRAW);
 			
 			// 2nd attribute is position
-			glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)0);
+			glVertexAttribPointer(1, 3, GL_DOUBLE, GL_FALSE, sizeof(particle_t), (void*)0);
 			glEnableVertexAttribArray(1);
 
 			// 3rd attribute is particle velocity
-			glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)sizeof(vec3));
+			glVertexAttribPointer(2, 3, GL_DOUBLE, GL_FALSE, sizeof(particle_t), (void*)sizeof(vec3));
 			glEnableVertexAttribArray(2);
 			
 			// 4th attribute is particle acceleration
-			glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec3)*2));
+			glVertexAttribPointer(3, 3, GL_DOUBLE, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec3)*2));
 			glEnableVertexAttribArray(3);
 		}
 
@@ -218,9 +322,6 @@ class Render
 					(float*)glm::value_ptr(this->camera->view_mat())
 			);
 
-			glm::mat4 project_mat = glm::perspectiveFov(
-					camera->fov*glm::pi<float>()/180.f, (float)win_x, (float)win_y, 0.1f, 1000.f
-			);
 
 			particles_shaders->setMat4("project_mat",
 					(float*)glm::value_ptr(project_mat)
