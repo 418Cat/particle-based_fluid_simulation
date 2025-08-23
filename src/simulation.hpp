@@ -106,11 +106,12 @@ struct bounding_boxes_t
 {
 	unsigned int nbx = 0;
 	unsigned int nby = 0;
+	unsigned int nbz = 0;
 
-	// Flattened 2D array of arrays of pointers to particles
+	// Flattened 3D array of arrays of pointers to particles
 	particle_t* * * p_per_b = NULL; 
 	
-	// Flattened 2D array containing the
+	// Flattened 3D array containing the
 	// number of particles per bounding box
 	int* n_p_per_b = NULL; 
 };
@@ -125,6 +126,7 @@ struct settings_t
 
 	unsigned int n_bounding_boxes_x = 20;
 	unsigned int n_bounding_boxes_y = 20;
+	unsigned int n_bounding_boxes_z = 20;
 
 	vec3 domain_size = vec3(200., 200., 200.);
 	num domain_bounciness = 0.85;
@@ -179,14 +181,18 @@ class Simulation
 			// would cause problems for collision detection
 			int max_b_x = (int)floor(state.domain.size.x/(state.p_radius*2.));
             int max_b_y = (int)floor(state.domain.size.y/(state.p_radius*2.));
+            int max_b_z = (int)floor(state.domain.size.z/(state.p_radius*2.));
 			if(settings.n_bounding_boxes_x > max_b_x)
 				settings.n_bounding_boxes_x = max_b_x;
 			if(settings.n_bounding_boxes_y > max_b_y)
 				settings.n_bounding_boxes_y = max_b_y;
+			if(settings.n_bounding_boxes_z > max_b_z)
+				settings.n_bounding_boxes_z = max_b_z;
 
 			// Clamp to min 1
 			if(settings.n_bounding_boxes_x < 1) settings.n_bounding_boxes_x = 1;
 			if(settings.n_bounding_boxes_y < 1) settings.n_bounding_boxes_y = 1;
+			if(settings.n_bounding_boxes_z < 1) settings.n_bounding_boxes_z = 1;
 
 			// Clamp n_threads to max supported threads by cpu
 			unsigned int max_threads = std::thread::hardware_concurrency();
@@ -318,9 +324,10 @@ class Simulation
 		void particles_collision(particle_t* A, particle_t* old_A)
 		{
 			// Position in bounding boxes
-			int A_x = (int)(A->position.x/state.domain.size.x * bboxes.nbx);
-			int A_y = (int)(A->position.y/state.domain.size.y * bboxes.nby);
-			int A_xy = A_x*bboxes.nby+ A_y;
+			int A_x = (int)floor(A->position.x/state.domain.size.x * bboxes.nbx);
+			int A_y = (int)floor(A->position.y/state.domain.size.y * bboxes.nby);
+			int A_z = (int)floor(A->position.z/state.domain.size.z * bboxes.nbz);
+			int A_xyz = A_x*bboxes.nby*bboxes.nbz + A_y*bboxes.nbz + A_z;
 
 			int B_x = A_x - 1;
 			if(B_x < 0) B_x = 0;
@@ -331,70 +338,74 @@ class Simulation
 				if(B_y < 0) B_y = 0;
 				for(;B_y <= A_y+1 && B_y < bboxes.nby; B_y++)
 				{
-					int B_xy = B_x*bboxes.nby+ B_y;
 
-					for(int p_i = 0; p_i < bboxes.n_p_per_b[B_xy]; p_i++)
+					int B_z = A_z - 1;
+					if(B_z < 0) B_z = 0;
+					for(;B_z <= A_z+1 && B_z < bboxes.nbz; B_z++)
 					{
-						particle_t* B = bboxes.p_per_b[B_xy][p_i];
 
-						// Early continue with cheap test
-						num delta_x = A->position.x - B->position.x;
-						num delta_y = A->position.y - B->position.y;
-						if(	delta_x >  2.*state.p_radius ||
-							delta_x < -2.*state.p_radius ||
-							delta_y >  2.*state.p_radius ||
-							delta_y < -2.*state.p_radius) continue;
+						int B_xyz = B_x*bboxes.nby*bboxes.nbz + B_y*bboxes.nbz + B_z;
 
-						// Continue if the test is with itself
-						if(B == old_A) continue;
-
-						// Vector going from B's center to A's center,
-						// normal to the surface of both
-						vec3 normal = A->position - B->position;
-
-						// Squared distance for the test to avoid expensive sqrt
-						num dist_sqrd = normal.x*normal.x + normal.y*normal.y + normal.z*normal.z;
-						if(dist_sqrd == 0.) dist_sqrd = 0.01;
-						
-						// Collision happens, test with (2*p_radius)² since
-						if(dist_sqrd < 4.*state.p_radius*state.p_radius)
+						for(int p_i = 0; p_i < bboxes.n_p_per_b[B_xyz]; p_i++)
 						{
-							// The actual distance is needed,
-							// no choice about using square root
-							num dist = sqrt(dist_sqrd);
+							particle_t* B = bboxes.p_per_b[B_xyz][p_i];
 
-							// Normalize
-							normal /= dist;
+							// Early continue with cheap test
+							//num delta_x = glm::abs(A->position.x - B->position.x);
+							//num delta_y = glm::abs(A->position.y - B->position.y);
+							//num delta_z = glm::abs(A->position.z - B->position.z);
+							//if(	delta_x >  2.*state.p_radius ||
+							//	delta_y >  2.*state.p_radius ||
+							//	delta_z >  2.*state.p_radius) continue;
 
-							// Mirror the relative velocity (B_vel - A_vel) from 
-							// the normal vector and dampen the bounce
-							vec3 delta_vel = -normal * dot(A->velocity - B->velocity, normal) * state.p_bounciness;
+							// Continue if the test is with itself
+							if(B == old_A) continue;
 
-							if(state.p_collision_type == sim_state_t::VELOCITY)
-							{
-								A->velocity += delta_vel;
-							}
-							else if(state.p_collision_type == sim_state_t::ACCELERATION)
-							{
-								// Add the derivative to the acceleration
-								A->acceleration += delta_vel / state.delta_t;
-							}
+							// Vector going from B's center to A's center,
+							// normal to the surface of both
+							vec3 normal = A->position - B->position;
 
-							std::flush(std::cout);
+							// Squared distance for the test to avoid expensive sqrt
+							num dist_sqrd = normal.x*normal.x + normal.y*normal.y + normal.z*normal.z;
+							if(dist_sqrd == 0.) dist_sqrd = 0.01;
 							
-							// A is inside B's radius, move it out
-							A->position += -normal*(dist - 2. * state.p_radius);
+							// Collision happens, test with (2*p_radius)²
+							if(dist_sqrd < 4.*state.p_radius*state.p_radius)
+							{
+								// The actual distance is needed
+								num dist = sqrt(dist_sqrd);
 
-							// If A too close from B, move in a random direction
-							// TODO: Make this vector always be of length 1
-							// without using expensive operations like sqrt
-							// other TODO: Check if rand() is expensive
-							if(dist <= state.p_radius * 0.5)
-								A->position += vec3(
-										(num)std::rand() / RAND_MAX * state.p_radius,
-										(num)std::rand() / RAND_MAX * state.p_radius,
-										(num)std::rand() / RAND_MAX * state.p_radius
-								);
+								// Normalize
+								normal /= dist;
+
+								// Mirror the relative velocity (B_vel - A_vel) from 
+								// the normal vector and dampen the bounce
+								vec3 delta_vel = -normal * dot(A->velocity - B->velocity, normal) * state.p_bounciness;
+
+								if(state.p_collision_type == sim_state_t::VELOCITY)
+								{
+									A->velocity += delta_vel;
+								}
+								else if(state.p_collision_type == sim_state_t::ACCELERATION)
+								{
+									// Add the derivative to the acceleration
+									A->acceleration += delta_vel / state.delta_t;
+								}
+
+								// A is inside B's radius, move it out
+								A->position += -normal*(dist - 2. * state.p_radius);
+
+								// If A too close from B, move in a random direction
+								// TODO: Make this vector always be of length 1
+								// without using expensive operations like sqrt
+								// other TODO: Check if rand() is expensive
+								if(dist <= state.p_radius * 0.5)
+									A->position += vec3(
+											(num)std::rand() / RAND_MAX * state.p_radius,
+											(num)std::rand() / RAND_MAX * state.p_radius,
+											(num)std::rand() / RAND_MAX * state.p_radius
+									);
+							}
 						}
 					}
 				}
@@ -666,53 +677,59 @@ class Simulation
 			// Free particles lists before creating new one.
 			// Since malloc wasn't called for lists of length
 			// 0, don't call free for those
-			for(int i = 0; i < bboxes.nbx*bboxes.nby; i++)
+			for(int i = 0; i < bboxes.nbx*bboxes.nby*bboxes.nbz; i++)
 				if(bboxes.n_p_per_b[i] > 0) free(bboxes.p_per_b[i]);
 
 			bool has_changed =
 				bboxes.nbx != settings.n_bounding_boxes_x ||
-				bboxes.nby != settings.n_bounding_boxes_y;
+				bboxes.nby != settings.n_bounding_boxes_y ||
+				bboxes.nbz != settings.n_bounding_boxes_z;
 
 			bboxes.nbx = settings.n_bounding_boxes_x;
 			bboxes.nby = settings.n_bounding_boxes_y;
+			bboxes.nbz = settings.n_bounding_boxes_z;
 
 			// Realloc space, bounding boxes sizes have changed
 			if(has_changed)
 			{
 				bboxes.n_p_per_b = (int*)realloc(bboxes.n_p_per_b,
-						sizeof(int)*bboxes.nbx*bboxes.nby);
+						sizeof(int)*bboxes.nbx*bboxes.nby*bboxes.nbz);
 
 				bboxes.p_per_b   = (particle_t***)realloc(bboxes.p_per_b,
-						sizeof(particle_t**)*bboxes.nbx*bboxes.nby);
+						sizeof(particle_t**)*bboxes.nbx*bboxes.nby*bboxes.nbz);
 			}
 
 			// Incremental list, counting current index of particle when inserting
 			// (see last loop inserting pointers)
-			unsigned int n_p_per_b_again[bboxes.nbx*bboxes.nby];
+			unsigned int n_p_per_b_again[bboxes.nbx*bboxes.nby*bboxes.nbz];
 
-			// Assigning all 0s to 2D array containing the number
+			// Assigning all 0s to 3D array containing the number
 			// of particles per bounding box
-			memset(bboxes.n_p_per_b, 0, sizeof(unsigned int)*bboxes.nbx*bboxes.nby);
-			memset(n_p_per_b_again , 0, sizeof(unsigned int)*bboxes.nbx*bboxes.nby);
+			memset(bboxes.n_p_per_b, 0, sizeof(unsigned int)*bboxes.nbx*bboxes.nby*bboxes.nbz);
+			memset(n_p_per_b_again , 0, sizeof(unsigned int)*bboxes.nbx*bboxes.nby*bboxes.nbz);
 
 			// Counting number of particles per bounding box
 			for(int p_i = 0; p_i < state.n_particles; p_i++)
 			{
 				particle_t* p = &state.particles[p_i];
 
-				int x = (int)(p->position.x/state.domain.size.x * bboxes.nbx);
-				int y = (int)(p->position.y/state.domain.size.y * bboxes.nby);
-				int xy = x*bboxes.nby + y;
+				int x = (int)floor(p->position.x/state.domain.size.x * bboxes.nbx);
+				int y = (int)floor(p->position.y/state.domain.size.y * bboxes.nby);
+				int z = (int)floor(p->position.z/state.domain.size.z * bboxes.nbz);
+				int xyz = x*bboxes.nby*bboxes.nbz + y*bboxes.nbz + z;
 				
 				// Some particles might be leaking out of the domain
-				if(x < 0 || y < 0 || x > bboxes.nbx-1 || y > bboxes.nby-1) continue;
+				if( x < 0 || y < 0 || z < 0 ||
+					x > bboxes.nbx-1 || y > bboxes.nby-1 || z > bboxes.nbz-1
+				)
+					continue;
 
-				bboxes.n_p_per_b[xy]++;
+				bboxes.n_p_per_b[xyz]++;
 			}
 
 			// Alloc space needed in list of particles per bounding box.
 			// Only call malloc if lists contain particles
-			for(int i = 0; i < bboxes.nbx*bboxes.nby; i++)
+			for(int i = 0; i < bboxes.nbx*bboxes.nby*bboxes.nbz; i++)
 				if(bboxes.n_p_per_b[i] > 0) bboxes.p_per_b[i] = (particle_t**)malloc(sizeof(particle_t*)*bboxes.n_p_per_b[i]);
 
 			// Insert particles pointers in bounding boxes
@@ -720,14 +737,17 @@ class Simulation
 			{
 				particle_t* p = &state.particles[p_i];
 
-				int p_x = (int)(p->position.x/state.domain.size.x * bboxes.nbx);
-				int p_y = (int)(p->position.y/state.domain.size.y * bboxes.nby);
-				int p_xy = p_x*bboxes.nby + p_y;
+				int x = (int)floor(p->position.x/state.domain.size.x * bboxes.nbx);
+				int y = (int)floor(p->position.y/state.domain.size.y * bboxes.nby);
+				int z = (int)floor(p->position.z/state.domain.size.z * bboxes.nbz);
+				int xyz = x*bboxes.nby*bboxes.nbz + y*bboxes.nbz + z;
 
-				if(p_x < 0 || p_y < 0 || p_x > bboxes.nbx-1 || p_y > bboxes.nby-1) continue;
+				if( x < 0 || y < 0 || z < 0 ||
+					x > bboxes.nbx-1 || y > bboxes.nby-1 || z > bboxes.nbz-1
+				) continue;
 
 				// Count current particle index in bounding box
-				bboxes.p_per_b[p_xy][n_p_per_b_again[p_xy]++] = p;
+				bboxes.p_per_b[xyz][n_p_per_b_again[xyz]++] = p;
 			}
 		}
 

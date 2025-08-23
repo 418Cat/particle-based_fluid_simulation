@@ -130,9 +130,10 @@ class SimUI
 					sim->settings.collision_type = sim_state_t::p_collision_type_t(col_type_selected);
 
 				ImGui::Spacing();
-				ImGui::SeparatorText("Bounding boxes XY [TODO: 3D]");
+				ImGui::SeparatorText("Bounding boxes XYZ [TODO: 3D]");
 				ImGui::SliderInt("##BboxesX", (int*)(&sim->settings.n_bounding_boxes_x), 1, (int)floor(sim->settings.domain_size.x/(sim->settings.particle_radius*2.)));
 				ImGui::SliderInt("##BboxesY", (int*)(&sim->settings.n_bounding_boxes_y), 1, (int)floor(sim->settings.domain_size.y/(sim->settings.particle_radius*2.)));
+				ImGui::SliderInt("##BboxesZ", (int*)(&sim->settings.n_bounding_boxes_z), 1, (int)floor(sim->settings.domain_size.z/(sim->settings.particle_radius*2.)));
 
 				ImGui::Spacing();
 				ImGui::Separator();
