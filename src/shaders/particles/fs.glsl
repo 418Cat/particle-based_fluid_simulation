@@ -3,12 +3,17 @@
 in vec2 fs_uv;
 in vec3 velocity;
 in vec3 acceleration;
+in float density;
+in vec3 bboxes_xyz;
 
 uniform bool show_vel;
 uniform float arrow_max_vel;
 
 uniform bool show_accel;
 uniform float arrow_max_accel;
+
+uniform bool show_bboxes;
+uniform vec3 bboxes;
 
 out vec4 col;
 
@@ -49,21 +54,27 @@ void main()
 	{
 		vec3 vel_ratio = abs(velocity) / arrow_max_vel;
 
-		inside_col.x = vel_ratio.x;
-		inside_col.y = vel_ratio.y;
-		inside_col.z = vel_ratio.z;
+		inside_col.r = vel_ratio.x;
+		inside_col.g = vel_ratio.y;
+		inside_col.b = vel_ratio.z;
 	}
 	if(show_accel)
 	{
 		vec3 acc_ratio = abs(acceleration) / arrow_max_accel;
 
-		outside_col.x = 1. - 1./acc_ratio.x;
-		outside_col.y = 1. - 1./acc_ratio.y;
-		outside_col.z = 1. - 1./acc_ratio.z;
+		outside_col.r = 1. - 1./acc_ratio.x;
+		outside_col.g = 1. - 1./acc_ratio.y;
+		outside_col.b = 1. - 1./acc_ratio.z;
 	}
 
 	col = vec4(
 			inside_col  * (1.-radius) +
 			outside_col * radius,
 			1.);
+
+	//col.rgb = sqrt(col.rgb);
+	//col.r += density / 10.;
+	
+	if(show_bboxes)
+		col.rgb = pow(bboxes_xyz / 30., vec3(1. / 2.4));
 }

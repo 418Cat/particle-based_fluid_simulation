@@ -106,8 +106,8 @@ class Render
 
 		bool show_borders = true;
 		float border_size = 1.;
+
 		bool show_boxes = true;
-		int box_line_size = 1;
 
 		Render(GLFWwindow* win, Simulation* sim, Camera* camera)
 		{
@@ -294,6 +294,14 @@ class Render
 			// 4th attribute is particle acceleration
 			glVertexAttribPointer(3, 3, GL_DOUBLE, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec3)*2));
 			glEnableVertexAttribArray(3);
+
+			// 5th is density
+			glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec3)*3 + sizeof(num)));
+			glEnableVertexAttribArray(4);
+
+			// Bounding box xyz
+			glVertexAttribPointer(5, 3, GL_INT, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec3)*3 + sizeof(num) + sizeof(float)));
+			glEnableVertexAttribArray(5);
 		}
 
 		void draw_particles()
@@ -306,6 +314,8 @@ class Render
 			glVertexAttribDivisor(1, 1); // Second attribute (Particle pos) changes every 1 instance
 			glVertexAttribDivisor(2, 1); // Third one (velocity) too
 			glVertexAttribDivisor(3, 1); // Acceleration, yes also
+			glVertexAttribDivisor(4, 1); // Density
+			glVertexAttribDivisor(5, 1); // Bounding box xyz
 
 			particles_shaders->use();
 
@@ -329,6 +339,10 @@ class Render
 
 			particles_shaders->setVec3("camera_pos",
 					camera->pos.x, camera->pos.y, camera->pos.z
+			);
+
+			particles_shaders->setBool("show_bboxes",
+					this->show_boxes
 			);
 
 			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, simulation->n_particles());

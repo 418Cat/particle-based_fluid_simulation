@@ -7,7 +7,7 @@ int main()
 {
 	SimUI ui = SimUI();
 
-	Simulation sim = Simulation(2000);
+	Simulation sim = Simulation(2);
 	Camera cam = Camera();
 	Render render = Render(ui.window, &sim, &cam);
 
@@ -16,13 +16,14 @@ int main()
 	ui.camera = &cam;
 
 	// Settings =============================
-	sim.settings.domain_size = vec3(150., 100., 100.);
+	sim.settings.domain_size = vec3(100., 100., 2.);
 	sim.settings.n_bounding_boxes_x = 75;
 	sim.settings.n_bounding_boxes_y = 50;
 	sim.settings.n_bounding_boxes_z = 50;
 	sim.settings.domain_bounciness = 0.1;
 	sim.settings.collision_type = sim_state_t::ACCELERATION;
 	sim.settings.domain_gravity_radial = true;
+	sim.settings.hertz = 500;
 
 	render.show_vel = true;
 

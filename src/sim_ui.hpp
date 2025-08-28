@@ -85,8 +85,8 @@ class SimUI
 
 				ImGui::PopStyleColor();
 				ImGui::SameLine();
-				//ImGui::SliderFloat("Sim speed", &sim->settings.speed, 0., 2.);
-				ImGui::InputDouble("Sim speed", &sim->settings.speed, 0.05); // DOUBLE
+				ImGui::DragFloat("Sim speed", &sim->settings.speed, sim->settings.speed/20., 0., 2.);
+				//ImGui::InputDouble("Sim speed", &sim->settings.speed, 0.05); // DOUBLE
 
 				ImGui::Spacing();
 				//ImGui::DragFloat3("Domain size", (float*)&sim->settings.domain_size, 1., 0.);
@@ -100,7 +100,7 @@ class SimUI
 				{
 					bool was_running = sim->settings.run;
 					sim->end();
-					sim->spawn_particles_as_rect();
+					sim->spawn_particles_as_rect(false);
 					if(was_running) sim->run();
 				}
 
@@ -130,7 +130,7 @@ class SimUI
 					sim->settings.collision_type = sim_state_t::p_collision_type_t(col_type_selected);
 
 				ImGui::Spacing();
-				ImGui::SeparatorText("Bounding boxes XYZ [TODO: 3D]");
+				ImGui::SeparatorText("Bounding boxes XYZ");
 				ImGui::SliderInt("##BboxesX", (int*)(&sim->settings.n_bounding_boxes_x), 1, (int)floor(sim->settings.domain_size.x/(sim->settings.particle_radius*2.)));
 				ImGui::SliderInt("##BboxesY", (int*)(&sim->settings.n_bounding_boxes_y), 1, (int)floor(sim->settings.domain_size.y/(sim->settings.particle_radius*2.)));
 				ImGui::SliderInt("##BboxesZ", (int*)(&sim->settings.n_bounding_boxes_z), 1, (int)floor(sim->settings.domain_size.z/(sim->settings.particle_radius*2.)));
@@ -181,23 +181,27 @@ class SimUI
 			{
 				ImGui::DragFloat("FOV", &camera->fov, camera->fov/10., 1., 100.);
 
+				ImGui::SeparatorText("Particles display");
+
+				ImGui::BeginDisabled(render->show_boxes);
 				ImGui::Checkbox("Show##vel", &render->show_vel);
-				ImGui::SameLine();
-				ImGui::DragFloat("Velocity arrow", &render->arrow_max_vel, render->arrow_max_vel/10. + 0.0001, 0.);
+				ImGui::DragFloat("Max Velocity", &render->arrow_max_vel, render->arrow_max_vel/10. + 0.0001, 0.);
 
+				ImGui::Spacing();ImGui::Spacing();
 				ImGui::Checkbox("Show##accel", &render->show_accel);
-				ImGui::SameLine();
-				ImGui::DragFloat("Acceleration arrow", &render->arrow_max_accel, render->arrow_max_accel/10. + 0.0001, 0.);
+				ImGui::DragFloat("Max Acceleration", &render->arrow_max_accel, render->arrow_max_accel/10. + 0.0001, 0.);
+				ImGui::EndDisabled();
 
-				ImGui::Spacing();
+				ImGui::Spacing();ImGui::Spacing();
+				ImGui::Checkbox("Show bbox", &render->show_boxes);
+
+				ImGui::SeparatorText("Domain display");
 				ImGui::Checkbox("Show", &render->show_borders);
 				ImGui::SameLine();
-				ImGui::DragFloat("Domain borders size", &render->border_size, render->border_size/10., 0., 100., "%.0f %%");
+				ImGui::DragFloat("Domain borders size", &render->border_size, render->border_size/10., 0., 5., "%.0f %%");
+				ImGui::Spacing();ImGui::Spacing();
 				
-				ImGui::Checkbox("Show##boxes lines", &render->show_boxes);
-				ImGui::SameLine();
-				ImGui::DragInt("Bounding boxes lines thickness", &render->box_line_size, 1, 1, 30);
-
+				ImGui::Separator();
 				ImGui::Spacing();
 				ImGui::Checkbox("Clear screen", &clear_screen);
 

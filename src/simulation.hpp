@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 
+#include "ext/scalar_constants.hpp"
 #include "glm.hpp"
 
 #include <chrono>
@@ -11,7 +12,7 @@
 
 #include "memory.h"
 
-using glm::mod, glm::dvec3;
+using glm::mod, glm::dvec3, glm::ivec3, glm::vec;
 
 // Easy precision change
 #define num double
@@ -23,6 +24,8 @@ struct particle_t
 	vec3 velocity 		= vec3(0.);
 	vec3 acceleration 	= vec3(0.);
 	num mass 			= 1.;
+	float density 		= 1.;
+	ivec3 bbox_xyz		= glm::vec<3, int>(0);
 };
 
 struct tree_node_t
@@ -100,6 +103,14 @@ struct sim_state_t
 
 	bool p_gravity;
 	bool p_gravity_inverse;
+
+	bool p_liquid = true;
+	float p_liquid_density = 1.;
+	float p_liquid_h = 8.;
+	enum p_liquid_kernel_t
+	{
+		CUBIC_SPLINE,
+	} p_liquid_kernel = sim_state_t::CUBIC_SPLINE;
 };
 
 struct bounding_boxes_t
@@ -122,7 +133,7 @@ struct settings_t
 	unsigned int n_threads = 4;
 	unsigned int hertz = 1500;
 
-	num speed = 1.;
+	float speed = 1.;
 
 	unsigned int n_bounding_boxes_x = 20;
 	unsigned int n_bounding_boxes_y = 20;
@@ -151,6 +162,7 @@ class Simulation
 {
 	private:
 		std::thread t;
+		std::thread *ts;
 		sim_state_t state;
 
 		bounding_boxes_t bboxes;
@@ -217,7 +229,7 @@ class Simulation
 		const num& sim_tick_time()
 			{return state.delta_t;}
 
-		void spawn_particles_as_rect()
+		void spawn_particles_as_rect(bool with_vel=true)
 		{
 			num side_length = ceil(powf(state.n_particles, 1./3.));
 			num dx = state.domain.size.x/side_length;
@@ -236,7 +248,7 @@ class Simulation
 					(int)(i/(side_length*side_length)) * dz + state.p_radius
 				);
 
-				p->velocity = p->position - state.domain.size / 2.;
+				if(with_vel) p->velocity = p->position - state.domain.size / 2.;
 				p->mass = 1.;
 
 				state.buff_particles[i] = *p;
@@ -324,9 +336,9 @@ class Simulation
 		void particles_collision(particle_t* A, particle_t* old_A)
 		{
 			// Position in bounding boxes
-			int A_x = (int)floor(A->position.x/state.domain.size.x * bboxes.nbx);
-			int A_y = (int)floor(A->position.y/state.domain.size.y * bboxes.nby);
-			int A_z = (int)floor(A->position.z/state.domain.size.z * bboxes.nbz);
+			int A_x = A->bbox_xyz.x;
+			int A_y = A->bbox_xyz.y;
+			int A_z = A->bbox_xyz.z;
 			int A_xyz = A_x*bboxes.nby*bboxes.nbz + A_y*bboxes.nbz + A_z;
 
 			int B_x = A_x - 1;
@@ -351,12 +363,12 @@ class Simulation
 							particle_t* B = bboxes.p_per_b[B_xyz][p_i];
 
 							// Early continue with cheap test
-							//num delta_x = glm::abs(A->position.x - B->position.x);
-							//num delta_y = glm::abs(A->position.y - B->position.y);
-							//num delta_z = glm::abs(A->position.z - B->position.z);
-							//if(	delta_x >  2.*state.p_radius ||
-							//	delta_y >  2.*state.p_radius ||
-							//	delta_z >  2.*state.p_radius) continue;
+							num delta_x = glm::abs(A->position.x - B->position.x);
+							num delta_y = glm::abs(A->position.y - B->position.y);
+							num delta_z = glm::abs(A->position.z - B->position.z);
+							if(	delta_x >  2.*state.p_radius ||
+								delta_y >  2.*state.p_radius ||
+								delta_z >  2.*state.p_radius) continue;
 
 							// Continue if the test is with itself
 							if(B == old_A) continue;
@@ -399,7 +411,10 @@ class Simulation
 								// TODO: Make this vector always be of length 1
 								// without using expensive operations like sqrt
 								// other TODO: Check if rand() is expensive
-								if(dist <= state.p_radius * 0.5)
+								if(dist <= state.p_radius * 0.7)
+									A->acceleration += -normal*(dist - 2. * state.p_radius) / 2.;
+
+								if(dist <= state.p_radius * 0.3)
 									A->position += vec3(
 											(num)std::rand() / RAND_MAX * state.p_radius,
 											(num)std::rand() / RAND_MAX * state.p_radius,
@@ -456,6 +471,90 @@ class Simulation
 			return total_gravity;
 		}
 
+		void particles_liquid_force(particle_t* I, particle_t* old_I)
+		{
+			float density = 0.;
+
+
+			// Position in bounding boxes
+			int I_x = I->bbox_xyz.x;
+			int I_y = I->bbox_xyz.y;
+			int I_z = I->bbox_xyz.z;
+			int I_xyz = I_x*bboxes.nby*bboxes.nbz + I_y*bboxes.nbz + I_z;
+
+			int J_x = I_x - 1;
+			if(J_x < 0) J_x = 0;
+			for(;J_x <= I_x+1 && J_x < bboxes.nbx; J_x++)
+			{
+
+				int J_y = I_y - 1;
+				if(J_y < 0) J_y = 0;
+				for(;J_y <= I_y+1 && J_y < bboxes.nby; J_y++)
+				{
+
+					int J_z = I_z - 1;
+					if(J_z < 0) J_z = 0;
+					for(;J_z <= I_z+1 && J_z < bboxes.nbz; J_z++)
+					{
+
+						int J_xyz = J_x*bboxes.nby*bboxes.nbz + J_y*bboxes.nbz + J_z;
+
+						for(int p_i = 0; p_i < bboxes.n_p_per_b[J_xyz]; p_i++)
+						{
+							particle_t* J = bboxes.p_per_b[J_xyz][p_i];
+
+							// Early continue with cheap test
+							num delta_x = glm::abs(I->position.x - J->position.x);
+							num delta_y = glm::abs(I->position.y - J->position.y);
+							num delta_z = glm::abs(I->position.z - J->position.z);
+							if(	delta_x >  2.*state.p_liquid_h ||
+								delta_y >  2.*state.p_liquid_h ||
+								delta_z >  2.*state.p_liquid_h) continue;
+
+							// Continue if the test is with itself
+							if(J == old_I) continue;
+
+							// Vector going from J's center to I's center,
+							// normal to the surface of both
+							vec3 normal = I->position - J->position;
+
+							// Squared distance for the test to avoid expensive sqrt
+							num dist_sqrd = normal.x*normal.x + normal.y*normal.y + normal.z*normal.z;
+							if(dist_sqrd == 0.) dist_sqrd = 0.01;
+							
+							// J is in radius h of I
+							if(sqrt(dist_sqrd) < 1000.)
+							{
+								// The actual distance is needed
+								num dist = sqrt(dist_sqrd);
+
+								// Normalize
+								normal /= dist;
+
+								// Wij = f(q) with q=dist/h
+								float q = dist / state.p_liquid_h;
+
+								std::cout << "Q: " << q << std::endl;
+
+								float w_ij = 48./22. * (
+									q < 1. ? 	2./3. - q*q+ 1./2. * q*q*q	:
+									(q < 2. ? 	1./6. * pow(2. - q, 3.) 	:  0.
+									));
+
+								density += w_ij * J->mass;
+							}
+						}
+					}
+				}
+			}
+
+			const float stiffness = 1.;
+			float pressure = stiffness * (
+					pow(density / state.p_liquid_density, 7.) - 1.
+			);
+			I->density = density;
+		}
+
 		void particles_interactions(particle_t* A, particle_t* old_A)
 		{
 			if(state.p_collisions)
@@ -463,6 +562,9 @@ class Simulation
 
 			if(state.p_gravity)
 				A->acceleration += particles_gravity(old_A, octree_state.root);
+
+			if(true || state.p_liquid)
+				particles_liquid_force(A, old_A);
 		}
 
 		Simulation(int n_particles)
@@ -475,6 +577,8 @@ class Simulation
 
 			octree_state.root = new tree_node_t;
 			octree_root = new tree_node_t;
+
+			ts = new std::thread[std::thread::hardware_concurrency()];
 
 			update_settings();
 			spawn_particles_as_rect();
@@ -717,12 +821,17 @@ class Simulation
 				int y = (int)floor(p->position.y/state.domain.size.y * bboxes.nby);
 				int z = (int)floor(p->position.z/state.domain.size.z * bboxes.nbz);
 				int xyz = x*bboxes.nby*bboxes.nbz + y*bboxes.nbz + z;
+
+				bool is_out =   x < 0 || y < 0 || z < 0 ||
+								x > bboxes.nbx-1 || y > bboxes.nby-1 || z > bboxes.nbz-1;
 				
 				// Some particles might be leaking out of the domain
-				if( x < 0 || y < 0 || z < 0 ||
-					x > bboxes.nbx-1 || y > bboxes.nby-1 || z > bboxes.nbz-1
-				)
+				if(is_out)
+				{
+					p->bbox_xyz = ivec3(-1);
 					continue;
+				}
+				p->bbox_xyz = glm::vec<3, int>(x, y, z);
 
 				bboxes.n_p_per_b[xyz]++;
 			}
@@ -737,14 +846,11 @@ class Simulation
 			{
 				particle_t* p = &state.particles[p_i];
 
-				int x = (int)floor(p->position.x/state.domain.size.x * bboxes.nbx);
-				int y = (int)floor(p->position.y/state.domain.size.y * bboxes.nby);
-				int z = (int)floor(p->position.z/state.domain.size.z * bboxes.nbz);
-				int xyz = x*bboxes.nby*bboxes.nbz + y*bboxes.nbz + z;
+				if(p->bbox_xyz == ivec3(-1)) continue;
 
-				if( x < 0 || y < 0 || z < 0 ||
-					x > bboxes.nbx-1 || y > bboxes.nby-1 || z > bboxes.nbz-1
-				) continue;
+				int xyz = 	p->bbox_xyz.x*bboxes.nby*bboxes.nbz +
+							p->bbox_xyz.y*bboxes.nbz 			+
+							p->bbox_xyz.z;
 
 				// Count current particle index in bounding box
 				bboxes.p_per_b[xyz][n_p_per_b_again[xyz]++] = p;
@@ -759,12 +865,10 @@ class Simulation
 			state.last_update = now;
 
 			update_settings();
-			if(state.domain.bounciness) build_bounding_boxes();
+			if(state.p_collisions) build_bounding_boxes();
 
 			octree_state.root->type = tree_node_t::ROOT;
 			if(state.p_gravity) build_octree(octree_state.root);
-
-			std::thread ts[state.n_threads];
 
 			// Ceil to get every particles in case it's not round
 			int p_per_thread = ceil((num)state.n_particles/(num)state.n_threads);
@@ -785,8 +889,8 @@ class Simulation
 					particles_interactions(n_p, p);
 					domain_interactions(n_p, p);
 
-					n_p->velocity += n_p->acceleration * (num)delta_t;		//  v(t-1) + a(t)*t
-					n_p->position += n_p->velocity * (num)delta_t; 			//  p(t-1) + v(t)*t
+					n_p->velocity += n_p->acceleration * (num)delta_t;		//  v(t) = v(t-1) + a(t)*t
+					n_p->position += n_p->velocity * (num)delta_t; 			//  p(t) = p(t-1) + v(t)*t
 
 					particles[p_i] = *p;
 				}
