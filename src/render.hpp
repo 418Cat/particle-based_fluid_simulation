@@ -107,7 +107,8 @@ class Render
 		bool show_borders = true;
 		float border_size = 1.;
 
-		bool show_boxes = true;
+		bool show_boxes = false;
+		bool show_density = true;
 
 		Render(GLFWwindow* win, Simulation* sim, Camera* camera)
 		{
@@ -343,6 +344,10 @@ class Render
 
 			particles_shaders->setBool("show_bboxes",
 					this->show_boxes
+			);
+			
+			particles_shaders->setBool("show_density",
+					this->show_density
 			);
 
 			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, simulation->n_particles());

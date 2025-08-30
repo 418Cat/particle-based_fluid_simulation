@@ -147,6 +147,17 @@ class SimUI
 				ImGui::EndTabItem();
 			}
 
+			if(ImGui::BeginTabItem("Liquid"))
+			{
+				ImGui::Checkbox("Enable##liquid_sim", &sim->settings.liquid_sim);
+
+				ImGui::InputDouble("Rest density", &sim->settings.liquid_rest_density, 0.05);
+				ImGui::InputDouble("Smoothing radius", &sim->settings.smoothing_length_h, 0.05);
+				ImGui::InputDouble("Stiffness constant", &sim->settings.stiffness_constant_k, 0.05);
+
+				ImGui::EndTabItem();
+			}
+
 			if(ImGui::BeginTabItem("Gravity"))
 			{
 				ImGui::SeparatorText("Domain gravity");
@@ -195,10 +206,14 @@ class SimUI
 				ImGui::Spacing();ImGui::Spacing();
 				ImGui::Checkbox("Show bbox", &render->show_boxes);
 
+				ImGui::Spacing();ImGui::Spacing();
+				ImGui::Checkbox("Show density", &render->show_density);
+
+
 				ImGui::SeparatorText("Domain display");
 				ImGui::Checkbox("Show", &render->show_borders);
 				ImGui::SameLine();
-				ImGui::DragFloat("Domain borders size", &render->border_size, render->border_size/10., 0., 5., "%.0f %%");
+				ImGui::DragFloat("Domain borders size", &render->border_size, render->border_size/10., 0., 5., "%.1f %%");
 				ImGui::Spacing();ImGui::Spacing();
 				
 				ImGui::Separator();

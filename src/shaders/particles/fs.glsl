@@ -12,6 +12,8 @@ uniform float arrow_max_vel;
 uniform bool show_accel;
 uniform float arrow_max_accel;
 
+uniform bool show_density;
+
 uniform bool show_bboxes;
 uniform vec3 bboxes;
 
@@ -72,8 +74,8 @@ void main()
 			outside_col * radius,
 			1.);
 
-	//col.rgb = sqrt(col.rgb);
-	//col.r += density / 10.;
+	if(show_density)
+		col.r += log(density+1.);
 	
 	if(show_bboxes)
 		col.rgb = pow(bboxes_xyz / 30., vec3(1. / 2.4));
