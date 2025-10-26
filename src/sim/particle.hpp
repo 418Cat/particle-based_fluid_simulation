@@ -12,6 +12,7 @@ class Particle
 		vec3 velocity 		= vec3(0.);
 		vec3 acceleration 	= vec3(0.);
 		num mass 			= 1.;
+		num radius			= 1.;
 
 		vec3 bbox_xyz		= glm::vec<3, int>(0);
 

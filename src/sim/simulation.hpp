@@ -12,14 +12,7 @@
 #include "sim/data_structures/bounding_boxes/bounding_boxes.hpp"
 #include "sim/data_structures/octree/octree.hpp"
 
-struct domain_t
-{
-	vec3 size = vec3(500., 500., 500.);
-	bool radial_gravity = false;
-	bool gravity_axis[3] = {false, true, false};
-	vec3 gravity = vec3(0., -9.81, 0.);
-	num bounciness = .9;
-};
+#include "sim/domains/default.hpp"
 
 struct sim_state_t
 {
@@ -28,7 +21,7 @@ struct sim_state_t
 	num delta_t = 0.;
 	std::chrono::time_point<std::chrono::high_resolution_clock> last_update = std::chrono::high_resolution_clock::now();
 
-	domain_t domain;
+	DefaultDomain domain;
 
 	Particle* particles;
 	Particle* buff_particles;
@@ -129,7 +122,8 @@ class Simulation
 			state.domain.size 			= settings.domain_size;
 			state.domain.bounciness 	= settings.domain_bounciness;
 			state.domain.gravity 		= settings.domain_gravity;
-			for(int i = 0; i < 3; i++) state.domain.gravity_axis[i] = settings.domain_gravity_axis[i];
+			for(int i = 0; i < 3; i++)
+				state.domain.gravity_axis[i] = settings.domain_gravity_axis[i];
 			state.domain.radial_gravity = settings.domain_gravity_radial;
 
 			state.p_collisions = settings.particles_collisions;
@@ -213,83 +207,6 @@ class Simulation
 
 				state.buff_particles[i] = *p;
 				particles[i] = *p;
-			}
-		}
-
-		void domain_interactions(Particle* n_p, Particle* p)
-		{
-			if(state.domain.radial_gravity)
-			{
-				vec3 to_center = state.domain.size/2. - n_p->position;
-
-				num dist = distance(p->position, state.domain.size/2.);
-
-				num gravity_norm = sqrt(
-					(state.domain.gravity_axis[0] ? glm::abs(state.domain.gravity.x) : 0.) +
-					(state.domain.gravity_axis[1] ? glm::abs(state.domain.gravity.y) : 0.) +
-					(state.domain.gravity_axis[2] ? glm::abs(state.domain.gravity.z) : 0.)
-				);
-
-				if(dist == 0.) dist = 0.01;
-				to_center *= gravity_norm / dist;
-
-				n_p->acceleration += to_center / n_p->mass;
-			}
-			else
-				n_p->acceleration += vec3(
-					state.domain.gravity_axis[0] ? state.domain.gravity.x : 0.,
-					state.domain.gravity_axis[1] ? state.domain.gravity.y : 0.,
-					state.domain.gravity_axis[2] ? state.domain.gravity.z : 0.
-				);
-
-
-			// Sphere shaped domain ______________________________________________
-			//double radius = 50.;
-
-			//double dist_x = p->position.x - state.domain.size.x/2.;
-			//double dist_y = p->position.y - state.domain.size.y/2.;
-			//double dist_z = p->position.z - state.domain.size.z/2.;
-
-			//double dist_sqrd = dist_x*dist_x + dist_y*dist_y + dist_z*dist_z;
-
-			//if(dist_sqrd > radius*radius)
-			//{
-			//	double dist = sqrt(dist_sqrd);
-
-			//	vec3 normal = p->position - state.domain.size/2.;
-			//	normal /= dist;
-
-			//	p->position = state.domain.size/2. + normal * radius;
-
-			//	double dot_pos_norm = dot(normal, p->velocity);
-			//	p->velocity -= 2.*normal*dot_pos_norm;
-			//	p->velocity *= state.domain.bounciness;
-			//}
-			// ___________________________________________________________________
-
-			// For every component of the position, check if out of domain
-			for(int i = 0; i < 3; i++)
-			{
-				num* p_pos   = &((num*)&(n_p->position))[i];
-				num* p_vel   = &((num*)&(n_p->velocity))[i];
-				num* p_accel = &((num*)&(n_p->acceleration))[i];
-
-				num* w_coord = &((num*)&(state.domain.size))[i];
-
-				// Outer wall check
-				if(*p_pos >  *w_coord - state.p_radius)
-				{
-					//*p_accel = 0.;
-					*p_vel  *= -state.domain.bounciness;
-					*p_pos   = *w_coord - state.p_radius;
-				}
-
-				if(*p_pos < state.p_radius)
-				{
-					//*p_accel = 0.;
-					*p_vel  *= -state.domain.bounciness;
-					*p_pos   = state.p_radius;
-				}
 			}
 		}
 
@@ -683,6 +600,8 @@ class Simulation
 
 			ts = new std::thread[std::thread::hardware_concurrency()];
 
+			state.domain = DefaultDomain();
+
 			update_settings();
 			spawn_particles_as_rect();
 		}
@@ -880,7 +799,7 @@ class Simulation
 					n_p->acceleration = vec3(0., 0., 0.); // Reset acceleration each frame
 
 					particles_interactions(n_p, p);
-					domain_interactions(n_p, p);
+					state.domain.interactions(n_p, p);
 
 					// If liquid sim, compute density and
 					// delay integration to second loop
