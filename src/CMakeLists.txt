@@ -1,7 +1,7 @@
 # Building UI part
 add_library(
 	sim_ui	
-	sim_ui.hpp
+	util/ui/sim_ui.hpp
 )
 
 target_link_libraries(
@@ -10,10 +10,17 @@ target_link_libraries(
 	imgui
 )
 
+target_include_directories(
+	sim_ui PUBLIC
+	${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 # Building Simulation part
 add_library(
 	simulation
-	simulation.hpp
+	sim/simulation.hpp
+	sim/particle.hpp
+	sim/collision_info.hpp
 )
 
 target_link_libraries(
@@ -26,6 +33,10 @@ set_target_properties(
 	LINKER_LANGUAGE CXX
 )
 
+target_include_directories(
+	simulation PUBLIC
+	${CMAKE_CURRENT_SOURCE_DIR}
+)
 
 # Building render engine
 file( # Copy shaders to corresponding bin dir
@@ -37,7 +48,13 @@ file( # Copy shaders to corresponding bin dir
 
 add_library(
 	render
-	render.hpp
+	util/render/render.hpp
+	util/render/camera.hpp
+)
+
+target_include_directories(
+	render PUBLIC
+	${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(

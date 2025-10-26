@@ -1,7 +1,9 @@
-#include "render.hpp"
-#include "simulation.hpp"
-#include "sim_ui.hpp"
-#include "camera.hpp"
+#include "util/render/render.hpp"
+#include "util/render/camera.hpp"
+
+#include "sim/simulation.hpp"
+
+#include "util/ui/sim_ui.hpp"
 
 int main()
 {

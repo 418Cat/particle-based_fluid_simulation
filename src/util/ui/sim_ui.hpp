@@ -3,13 +3,17 @@
 
 #include <thread>
 
-#include "imgui.h"
-#include "render.hpp"
-#include "simulation.hpp"
+// render.hpp header must be placed before ui.h to not include opengl twice
+#include "util/render/render.hpp"
 
-#include "ui.h"
+#include "sim/simulation.hpp"
+#include "sim/particle.hpp"
 
-// Funny name with Fluid and UI :D
+#include <imgui.h>
+#include <ui.h>
+
+
+
 class SimUI
 {
 	private:
@@ -154,6 +158,7 @@ class SimUI
 				ImGui::InputDouble("Rest density", &sim->settings.liquid_rest_density, 0.05);
 				ImGui::InputDouble("Smoothing radius", &sim->settings.smoothing_length_h, 0.05);
 				ImGui::InputDouble("Stiffness constant", &sim->settings.stiffness_constant_k, 0.05);
+				ImGui::InputDouble("Kinematic Viscosity", &sim->settings.kinematic_viscosity, 0.05);
 
 				ImGui::EndTabItem();
 			}
@@ -249,7 +254,7 @@ class SimUI
 
 					for(int i = 0; i < sim->n_particles(); i++)
 					{
-						particle_t* p = &sim->particles[i];
+						Particle* p = &sim->particles[i];
 						float mom = p->mass * length(p->velocity);
 						if(mom != mom)
 						{
@@ -290,7 +295,7 @@ class SimUI
 					for(int i = 0; i < sim->n_particles(); i++)
 					{
 						ImGui::TableNextRow();
-						particle_t* A = &sim->particles[i];
+						Particle* A = &sim->particles[i];
 
 						ImGui::TableSetColumnIndex(0);
 						ImGui::Text("%d", i);

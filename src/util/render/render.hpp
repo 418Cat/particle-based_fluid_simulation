@@ -10,8 +10,12 @@
 #include <gtc/type_ptr.hpp>
 
 #include "ext/matrix_clip_space.hpp"
-#include "simulation.hpp"
+#include "sim/simulation.hpp"
+
 #include "shader.h"
+
+#include "math.h"
+
 #include "camera.hpp"
 
 class Render
@@ -154,7 +158,7 @@ class Render
 
 			draw_domain();
 			draw_particles();
-			//boxes_buffers(); // Causes issues when called each frame, gotta rewrite this class
+			// boxes_buffers(); // Causes issues when called each frame, gotta rewrite this class
 		}
 
 		void boxes_buffers()
@@ -175,46 +179,8 @@ class Render
 			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 			glEnableVertexAttribArray(0);
 
-			int n_boxes = 0;
-			std::function<void(tree_node_t*)> count_boxes;
-
-			count_boxes = [&count_boxes, &n_boxes](tree_node_t* node)
-			{
-				for(int n_i = 0; n_i < 8; n_i++)
-				{
-					std::cout << "Depth " << n_i << std::endl;
-					tree_node_t* curr_node = &node->children[n_i];
-					std::cout << "Got node " << n_i << (curr_node == NULL ? ", is NULL" : "") << std::endl;
-					std::cout << "Starting switch" << std::endl;
-					
-					switch(curr_node->type)
-					{
-					case tree_node_t::ROOT:
-						std::cout << "Node type: ROOT" << std::endl;
-						count_boxes(curr_node);
-						n_boxes++;
-						break;
-
-					case tree_node_t::BRANCH:
-						std::cout << "Node type: BRANCH" << std::endl;
-						count_boxes(curr_node);
-						n_boxes++;
-						break;
-
-					case tree_node_t::LEAF:
-						std::cout << "Node type: LEAF" << std::endl;
-						n_boxes++;
-						break;
-					
-					case tree_node_t::EMPTY:
-						std::cout << "Node type: EMPTY" << std::endl;
-						break;
-					}
-				}
-			};
-			//count_boxes(simulation->octree_root);
-
-			//std::cout << "Sim has " << n_boxes << " boxes" << std::endl;
+			
+			std::cout << "Octree has " << Octree::total_nodes(simulation->octree_root) << " nodes" << std::endl;
 		}
 
 		void domain_buffers()
@@ -282,26 +248,26 @@ class Render
 
 			// Declare position buffer
 			glBindBuffer(GL_ARRAY_BUFFER, particles_positions_vbo);
-			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles()*sizeof(particle_t), NULL, GL_DYNAMIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles()*sizeof(Particle), NULL, GL_DYNAMIC_DRAW);
 			
 			// 2nd attribute is position
-			glVertexAttribPointer(1, 3, GL_DOUBLE, GL_FALSE, sizeof(particle_t), (void*)0);
+			glVertexAttribPointer(1, 3, GL_DOUBLE, GL_FALSE, sizeof(Particle), (void*)0);
 			glEnableVertexAttribArray(1);
 
 			// 3rd attribute is particle velocity
-			glVertexAttribPointer(2, 3, GL_DOUBLE, GL_FALSE, sizeof(particle_t), (void*)sizeof(vec3));
+			glVertexAttribPointer(2, 3, GL_DOUBLE, GL_FALSE, sizeof(Particle), (void*)sizeof(vec3));
 			glEnableVertexAttribArray(2);
 			
 			// 4th attribute is particle acceleration
-			glVertexAttribPointer(3, 3, GL_DOUBLE, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec3)*2));
+			glVertexAttribPointer(3, 3, GL_DOUBLE, GL_FALSE, sizeof(Particle), (void*)(sizeof(vec3)*2));
 			glEnableVertexAttribArray(3);
 
 			// 5th is density
-			glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec3)*3 + sizeof(num)));
+			glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)(sizeof(vec3)*3 + sizeof(num)));
 			glEnableVertexAttribArray(4);
 
 			// Bounding box xyz
-			glVertexAttribPointer(5, 3, GL_INT, GL_FALSE, sizeof(particle_t), (void*)(sizeof(vec3)*3 + sizeof(num) + sizeof(float)));
+			glVertexAttribPointer(5, 3, GL_INT, GL_FALSE, sizeof(Particle), (void*)(sizeof(vec3)*3 + sizeof(num) + sizeof(float)));
 			glEnableVertexAttribArray(5);
 		}
 
@@ -309,7 +275,7 @@ class Render
 		{
 			glBindVertexArray(particles_vao);
 			glBindBuffer(GL_ARRAY_BUFFER, particles_positions_vbo);
-			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles()*sizeof(particle_t), simulation->particles, GL_DYNAMIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, simulation->n_particles()*sizeof(Particle), simulation->particles, GL_DYNAMIC_DRAW);
 
 			glVertexAttribDivisor(0, 0); // First attribute (Quad mesh) doesn't change
 			glVertexAttribDivisor(1, 1); // Second attribute (Particle pos) changes every 1 instance

@@ -7,10 +7,7 @@
 #include <imgui.h>
 #include <GLFW/glfw3.h>
 
-using glm::vec2,
-	  glm::vec3,
-	  glm::mat2,
-	  glm::mat4;
+#include "util/maths.hpp"
 
 class Camera
 {
@@ -79,22 +76,22 @@ class Camera
 
 
 			if(glfwGetKey(win, GLFW_KEY_W))
-				pos += view_dir * (double)speed;
+				pos += view_dir * (num)speed;
 
 			if(glfwGetKey(win, GLFW_KEY_S))
-				pos -= view_dir * (double)speed;
+				pos -= view_dir * (num)speed;
 
 			if(glfwGetKey(win, GLFW_KEY_A))
-				pos -= glm::cross(view_dir, vec3(0., 1., 0.)) * (double)speed;
+				pos -= glm::cross(view_dir, vec3(0., 1., 0.)) * (num)speed;
 
 			if(glfwGetKey(win, GLFW_KEY_D))
-				pos += glm::cross(view_dir, vec3(0., 1., 0.)) * (double)speed;
+				pos += glm::cross(view_dir, vec3(0., 1., 0.)) * (num)speed;
 
 			if(glfwGetKey(win, GLFW_KEY_Q))
-				pos.y += 1. * (double)speed;
+				pos.y += 1. * (num)speed;
 
 			if(glfwGetKey(win, GLFW_KEY_E))
-				pos.y -= 1. * (double)speed;
+				pos.y -= 1. * (num)speed;
 
 			if(glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) && !ImGui::GetIO().WantCaptureMouse)
 			{

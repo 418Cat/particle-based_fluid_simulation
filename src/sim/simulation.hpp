@@ -1,77 +1,16 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
-#include <cstdlib>
 #include <iostream>
-
-#include "ext/scalar_constants.hpp"
-#include "glm.hpp"
-
 #include <chrono>
+#include <memory.h>
 #include <thread>
 
-#include "memory.h"
+#include "util/maths.hpp"
+#include "particle.hpp"
 
-using glm::mod, glm::dvec3, glm::ivec3, glm::vec;
-
-// Easy precision change
-#define num double
-#define vec3 dvec3
-
-struct particle_t
-{
-	vec3 position 		= vec3(1.);
-	vec3 velocity 		= vec3(0.);
-	vec3 acceleration 	= vec3(0.);
-	num mass 			= 1.;
-
-	ivec3 bbox_xyz		= glm::vec<3, int>(0);
-
-	num density 		= 1.;
-	num pressure 		= 1.;
-};
-
-struct tree_node_t
-{
-	num mass = 0.;
-	unsigned int n_p = 0;
-	particle_t** contained_p = NULL;// Must only contain particles
-									// if node is LEAF or is being
-									// built
-
-	vec3 center_of_mass = vec3(0.);
-
-	vec3 coords = vec3(0.);
-	vec3 size = vec3(0.);
-	num volume = 0.;
-
-	tree_node_t* parent = NULL;
-	tree_node_t* children = NULL; // Array of size 8
-
-	enum type_t
-	{
-		ROOT,	// Doesn't have parents but has children
-		BRANCH, // Has both 
-		LEAF,	// Doesn't have children
-		EMPTY, 	// Has no particles (So no children)
-	} type;
-};
-
-struct octree_state_t
-{
-	unsigned int max_depth = 5;
-	unsigned int min_p_in_node = 4;
-
-	// (Gotta find a better name)
-	// Threshold above which particles_gravity()
-	// goes down one level deeper in the tree, based
-	// on the ratio between the volume of the node and
-	// the distance of the node's center of mass
-	// from the particle
-	num vol_dit_thresh = 0.01;
-	num gravity_factor = 1.e10;
-	tree_node_t* root;
-};
+#include "sim/data_structures/bounding_boxes/bounding_boxes.hpp"
+#include "sim/data_structures/octree/octree.hpp"
 
 struct domain_t
 {
@@ -91,8 +30,8 @@ struct sim_state_t
 
 	domain_t domain;
 
-	particle_t* particles;
-	particle_t* buff_particles;
+	Particle* particles;
+	Particle* buff_particles;
 	unsigned int n_particles;
 
 	bool p_collisions;
@@ -107,28 +46,18 @@ struct sim_state_t
 	bool p_gravity;
 	bool p_gravity_inverse;
 
-	bool liquid = true;
-	num liquid_rest_density = 1.;
-	num smoothing_length_h = 2.;
+	num p_gravity_factor;
+	num vol_dist_thresh = 0.01;
+
+	bool liquid;
+	num liquid_rest_density;
+	num smoothing_length_h;
 	enum liquid_kernel_f
 	{
 		CUBIC_SPLINE,
-	} p_liquid_kernel = sim_state_t::CUBIC_SPLINE;
-	num stiffness = 1.;
-};
-
-struct bounding_boxes_t
-{
-	unsigned int nbx = 0;
-	unsigned int nby = 0;
-	unsigned int nbz = 0;
-
-	// Flattened 3D array of arrays of pointers to particles
-	particle_t* * * p_per_b = NULL; 
-	
-	// Flattened 3D array containing the
-	// number of particles per bounding box
-	int* n_p_per_b = NULL; 
+	} p_liquid_kernel;
+	num stiffness;
+	num kin_visc;
 };
 
 struct settings_t
@@ -156,6 +85,15 @@ struct settings_t
 	bool particle_gravity = false;
 	num particles_gravity_factor = 1.e10;
 	bool particles_gravity_inverse = false;
+	
+	// (Gotta find a better name)
+	// Threshold above which particles_gravity()
+	// goes down one level deeper in the tree, based
+	// on the ratio between the volume of the node and
+	// the distance of the node's center of mass
+	// from the particle
+	num vol_dist_thresh = 0.01;
+	num gravity_factor = 1.e10;
 
 	unsigned int octree_max_depth = 7;
 	num volume_to_distance_threshold = 0.5;
@@ -166,6 +104,7 @@ struct settings_t
 	num smoothing_length_h = 6.;
 	sim_state_t::liquid_kernel_f liquid_kernel = sim_state_t::CUBIC_SPLINE;
 	num stiffness_constant_k = 0.5;
+	num kinematic_viscosity = 1.e-6;
 };
 
 class Simulation
@@ -175,15 +114,15 @@ class Simulation
 		std::thread *ts;
 		sim_state_t state;
 
-		bounding_boxes_t bboxes;
-		octree_state_t octree_state;
+		BoundingBoxes bboxes;
+		Octree octree;
 
 	public:
 		settings_t settings;
 
 		// Acts as public access to particles data
-		particle_t* particles;
-		tree_node_t* octree_root;
+		Particle* particles;
+		TreeNode* octree_root;
 
 		void update_settings()
 		{
@@ -226,11 +165,9 @@ class Simulation
 			state.p_gravity = settings.particle_gravity;
 			state.p_gravity_inverse = settings.particles_gravity_inverse;
 
-			octree_state.gravity_factor = settings.particles_gravity_factor;
-			octree_state.max_depth = settings.octree_max_depth;
+			octree.max_depth = settings.octree_max_depth;
 
-			octree_state.vol_dit_thresh = settings.volume_to_distance_threshold;
-			octree_state.min_p_in_node = settings.octree_min_particles_in_node;
+			octree.min_p_in_node = settings.octree_min_particles_in_node;
 
 			state.liquid = settings.liquid_sim;
 			state.liquid_rest_density = settings.liquid_rest_density;
@@ -240,6 +177,7 @@ class Simulation
 			state.p_liquid_kernel = settings.liquid_kernel;
 			state.stiffness = settings.stiffness_constant_k;
 			if(state.stiffness <= 0.) state.stiffness = 1.;
+			state.kin_visc = settings.kinematic_viscosity;
 		}
 
 		const unsigned int& n_particles()
@@ -247,6 +185,9 @@ class Simulation
 
 		const num& sim_tick_time()
 			{return state.delta_t;}
+
+		const sim_state_t& get_state()
+			{return state;}
 
 		void spawn_particles_as_rect(bool with_vel=true)
 		{
@@ -257,9 +198,9 @@ class Simulation
 
 			for(int i = 0; i < state.n_particles; i++)
 			{
-				particle_t* p = &state.particles[i];
+				Particle* p = &state.particles[i];
 
-				*p = particle_t();
+				*p = Particle();
 
 				p->position = vec3(
 					mod((num)i, side_length) * dx + state.p_radius,
@@ -275,7 +216,7 @@ class Simulation
 			}
 		}
 
-		void domain_interactions(particle_t* n_p, particle_t* p)
+		void domain_interactions(Particle* n_p, Particle* p)
 		{
 			if(state.domain.radial_gravity)
 			{
@@ -352,13 +293,15 @@ class Simulation
 			}
 		}
 
-		void particles_collision(particle_t* A, particle_t* old_A)
+		void particles_collision(Particle* A, Particle* old_A)
 		{
 			// Position in bounding boxes
 			int A_x = A->bbox_xyz.x;
 			int A_y = A->bbox_xyz.y;
 			int A_z = A->bbox_xyz.z;
 			int A_xyz = A_x*bboxes.nby*bboxes.nbz + A_y*bboxes.nbz + A_z;
+
+			if(A_x == -1 || A_y == -1 || A_z == -1) return;
 
 			int B_x = A_x - 1;
 			if(B_x < 0) B_x = 0;
@@ -379,7 +322,7 @@ class Simulation
 
 						for(int p_i = 0; p_i < bboxes.n_p_per_b[B_xyz]; p_i++)
 						{
-							particle_t* B = bboxes.p_per_b[B_xyz][p_i];
+							Particle* B = bboxes.p_per_b[B_xyz][p_i];
 
 							// Early continue with cheap test
 							num delta_x = glm::abs(A->position.x - B->position.x);
@@ -414,14 +357,11 @@ class Simulation
 								vec3 delta_vel = -normal * dot(A->velocity - B->velocity, normal) * state.p_bounciness;
 
 								if(state.p_collision_type == sim_state_t::VELOCITY)
-								{
 									A->velocity += delta_vel;
-								}
+
+								// Add the derivative to the acceleration
 								else if(state.p_collision_type == sim_state_t::ACCELERATION)
-								{
-									// Add the derivative to the acceleration
 									A->acceleration += delta_vel / state.delta_t;
-								}
 
 								// A is inside B's radius, move it out
 								A->position += -normal*(dist - 2. * state.p_radius);
@@ -430,14 +370,14 @@ class Simulation
 								// TODO: Make this vector always be of length 1
 								// without using expensive operations like sqrt
 								// other TODO: Check if rand() is expensive
-								//if(dist <= state.p_radius * 1.1)
+								//if(dist <= state.p_radius * 1.)
 									//A->acceleration += -normal*(dist - 2. * state.p_radius) / 2.;
 
-								if(dist <= state.p_radius*0.2)
+								if(dist <= state.p_radius*0.8)
 									A->position += vec3(
-											(num)std::rand() / RAND_MAX * state.p_radius,
-											(num)std::rand() / RAND_MAX * state.p_radius,
-											(num)std::rand() / RAND_MAX * state.p_radius
+											(num)std::rand() / (num)RAND_MAX * state.p_radius,
+											(num)std::rand() / (num)RAND_MAX * state.p_radius,
+											(num)std::rand() / (num)RAND_MAX * state.p_radius
 									);
 							}
 						}
@@ -446,18 +386,18 @@ class Simulation
 			}
 		}
 
-		vec3 particles_gravity(particle_t* A, tree_node_t* N, unsigned int depth=0)
+		vec3 particles_gravity(Particle* A, TreeNode* N, unsigned int depth=0)
 		{
-			if(N->type == tree_node_t::EMPTY) return vec3(0.);
+			if(N->type == TreeNode::EMPTY) return vec3(0.);
 
-			const num G = 6.6743e-11 * octree_state.gravity_factor *
+			const num G = 6.6743e-11 * state.p_gravity_factor *
 				(state.p_gravity_inverse ? -1. : 1.);
 
 			vec3 normal = N->center_of_mass - A->position;
 			num dist = length(normal);
 
 			// Node is far enough, use center of mass and total mass
-			if(N->volume / dist < octree_state.vol_dit_thresh)
+			if(N->volume / dist < state.vol_dist_thresh)
 			{
 				return normal * G * (A->mass*N->mass)/(dist*dist);
 			}
@@ -465,11 +405,11 @@ class Simulation
 			vec3 total_gravity = vec3(0.);
 
 			// Node doesn't have any children, iterate particles
-			if(N->type == tree_node_t::LEAF)
+			if(N->type == TreeNode::LEAF)
 			{
 				for(int p_i = 0; p_i < N->n_p; p_i++)
 				{
-					particle_t* B = N->contained_p[p_i];
+					Particle* B = N->contained_p[p_i];
 
 					if(A == B) continue;
 
@@ -490,7 +430,7 @@ class Simulation
 			return total_gravity;
 		}
 
-		void compute_liquid_density(particle_t* I, particle_t* old_I)
+		void compute_liquid_density(Particle* I, Particle* old_I)
 		{
 			num density = 0.;
 
@@ -525,26 +465,23 @@ class Simulation
 
 						for(int p_i = 0; p_i < bboxes.n_p_per_b[J_xyz]; p_i++)
 						{
-							particle_t* J = bboxes.p_per_b[J_xyz][p_i];
-
-							// Early continue with cheap test
-							num delta_x = glm::abs(I->position.x - J->position.x);
-							num delta_y = glm::abs(I->position.y - J->position.y);
-							num delta_z = glm::abs(I->position.z - J->position.z);
-							if(	delta_x >  2.*state.smoothing_length_h ||
-								delta_y >  2.*state.smoothing_length_h ||
-								delta_z >  2.*state.smoothing_length_h) continue;
+							Particle* J = bboxes.p_per_b[J_xyz][p_i];
 
 							// Continue if the test is with itself
-							//if(J == old_I) continue;
+							if(J == old_I) continue;
 
 							// Vector going from J's center to I's center,
 							// normal to the surface of both
 							vec3 normal = I->position - J->position;
 
+							// Cheap continue
+							if(		normal.x > state.smoothing_length_h ||
+									normal.y > state.smoothing_length_h ||
+									normal.z > state.smoothing_length_h) continue;
+
 							// Squared distance for the test to avoid expensive sqrt
 							num dist_sqrd = normal.x*normal.x + normal.y*normal.y + normal.z*normal.z;
-							if(dist_sqrd == 0.) dist_sqrd = 0.01;
+							if(dist_sqrd == 0.) dist_sqrd = 0.01*state.smoothing_length_h;
 							
 							// J is in radius h of I
 							if(dist_sqrd < state.smoothing_length_h*state.smoothing_length_h)
@@ -560,10 +497,7 @@ class Simulation
 								// and d the number of dimensions
 								num q = dist / state.smoothing_length_h;
 
-								num f_q = 48./22. * (
-									q < 1. ? 	2./3. - q*q+ 1./2. * q*q*q	:
-									(q < 2. ? 	1./6. * pow(2. - q, 3.) 	:  0.
-									));
+								num f_q = 6./4. * (q < 2. ? 	1./6. * pow(2. - q, 3.) 	:  0.);
 
 								num w_ij = 1. / (pow(state.smoothing_length_h, 3)) * f_q;
 
@@ -580,14 +514,21 @@ class Simulation
 			// P_0 the rest density of fluid
 			// k a stiffness constant
 			num pressure = state.stiffness * (
-					pow(density / state.liquid_rest_density, 7.) - 1.
+					density - state.liquid_rest_density
 			);
+
+			if(pressure != pressure)
+				printf("Pressure is NaN\n");
+
+			if(density != density)
+				printf("density is NaN\n");
+			//printf("Pressure: %.1f  , Density: %.1f    \n", pressure, density);
 
 			I->density = density;
 			I->pressure = pressure;
 		}
 
-		void compute_liquid_pressure_viscosity(particle_t* I, particle_t* old_I)
+		void compute_liquid_pressure_viscosity(Particle* I, Particle* old_I)
 		{
 			
 			vec3 sum_pressure = vec3(0.);
@@ -623,7 +564,7 @@ class Simulation
 
 						for(int p_i = 0; p_i < bboxes.n_p_per_b[J_xyz]; p_i++)
 						{
-							particle_t* J = bboxes.p_per_b[J_xyz][p_i];
+							Particle* J = bboxes.p_per_b[J_xyz][p_i];
 
 							// Early continue with cheap test
 							num delta_x = glm::abs(I->position.x - J->position.x);
@@ -655,15 +596,18 @@ class Simulation
 
 								vec3 total_force = vec3(0.);
 
-								auto w_ij = [&](vec3 xyz)
+								auto w_ij = [&](vec3 xyz, num vec_length=-1.)
 								{
+									if(vec_length== -1.) vec_length = distance(I->position, xyz);
+									if(vec_length == 0.) vec_length = 0.01;
+
 									// Wij = 1/(h^d) * f(q)
 									// with q=dist/h
 									// and d the number of dimensions
-									num q = distance(I->position, xyz) / state.smoothing_length_h;
+									num q = dist / state.smoothing_length_h;
 
-									num f_q = 48./22. * (
-										q < 1. ? 	2./3. - q*q+ 1./2. * q*q*q	:
+									num f_q = 6./4. * (
+										//q < 1. ? 	2./3. - q*q+ 1./2. * q*q*q	:
 										(q < 2. ? 	1./6. * pow(2. - q, 3.) 	:  0.
 										));
 
@@ -671,13 +615,20 @@ class Simulation
 								};
 
 								const num delta = 0.05*state.smoothing_length_h;
-								vec3 w_ij_gradient = w_ij(J->position) - vec3(
+								vec3 w_ij_gradient = w_ij(J->position, dist) - vec3(
 									w_ij(J->position + vec3(delta, 0., 0.) * (num)state.smoothing_length_h),
 									w_ij(J->position + vec3(0., delta, 0.) * (num)state.smoothing_length_h),
 									w_ij(J->position + vec3(0., 0., delta) * (num)state.smoothing_length_h)
 								);
 
 								//printf("Wij gradient: %f  ,  %f  ,  %f        \n", w_ij_gradient.x, w_ij_gradient.y, w_ij_gradient.z);
+
+								//if(I->density == 0.)
+								{
+									printf("Sum pressure: %.1f  %.1f  %.1f\n", sum_pressure.x, sum_pressure.y, sum_pressure.z);
+									printf("Sum sum_viscosity: %.1f  %.1f  %.1f\n", sum_viscosity.x, sum_viscosity.y, sum_viscosity.z);
+									printf("I->density: %.1f", I->density);
+								}
 
 								sum_pressure +=
 									J->mass *
@@ -693,36 +644,42 @@ class Simulation
 				}
 			}
 
-			//printf("Sum_pressure: %.1f , %.1f , %.1f           ", sum_pressure.x, sum_pressure.y, sum_pressure.z);
-			//printf("Sum_viscosity: %.1f , %.1f , %.1f           ", sum_viscosity.x, sum_viscosity.y, sum_viscosity.z);
-			vec3 pressure_force = -(I->pressure / I->density) * (num)I->density * sum_pressure;
-			vec3 viscosity_force = I->mass * 1.e-6 * 2. * sum_viscosity;
+			if(sum_pressure != sum_pressure)
+				printf("Sum pressure is NaN\n");
 
-			//printf("Pressure force: %.1f , %.1f , %.1f         \n", pressure_force.x, pressure_force.y, pressure_force.z);
-			//printf("Viscosity force: %.1f , %.1f , %.1f         \n", viscosity_force.x, viscosity_force.y, viscosity_force.z);
-			
+			if(sum_viscosity != sum_viscosity)
+				printf("Sum Viscosity is NaN\n");
+
+			std::cout << std::endl;
+
+			// F_press_i = -m_i / P_i * nabla(p_i)
+			// See Eq 6
+			vec3 pressure_force = -(I->pressure / I->density) * (num)I->density * sum_pressure;
+
+			// F_vis_i = m_i * v * nabla²(v_i)
+			// See Eq 8
+			// with v the kinematic viscosity
+			vec3 viscosity_force = I->mass * state.kin_visc * 2. * sum_viscosity;
+
 			I->acceleration += (pressure_force + viscosity_force) / I->mass;
 		}
 
-		void particles_interactions(particle_t* A, particle_t* old_A)
+		void particles_interactions(Particle* A, Particle* old_A)
 		{
 			if(state.p_collisions)
 				particles_collision(A, old_A);
 
 			if(state.p_gravity)
-				A->acceleration += particles_gravity(old_A, octree_state.root);
+				A->acceleration += particles_gravity(old_A, octree.root);
 		}
 
-		Simulation(int n_particles)
+		Simulation(int n_particles) : octree(state.domain.size, &particles, state.n_particles)
 		{
 			// Allocate needed space for particles
-			particles 			= (particle_t*)malloc(sizeof(particle_t)*n_particles);
-			state.particles 	= (particle_t*)malloc(sizeof(particle_t)*n_particles);
-			state.buff_particles= (particle_t*)malloc(sizeof(particle_t)*n_particles);
+			particles 			= (Particle*)malloc(sizeof(Particle)*n_particles);
+			state.particles 	= (Particle*)malloc(sizeof(Particle)*n_particles);
+			state.buff_particles= (Particle*)malloc(sizeof(Particle)*n_particles);
 			state.n_particles 	= n_particles;
-
-			octree_state.root = new tree_node_t;
-			octree_root = new tree_node_t;
 
 			ts = new std::thread[std::thread::hardware_concurrency()];
 
@@ -737,9 +694,9 @@ class Simulation
 			bool was_running = settings.run;
 			end();
 
-			particles 			= (particle_t*)realloc(particles, 				sizeof(particle_t)*n_particles);
-			state.particles 	= (particle_t*)realloc(state.particles, 		sizeof(particle_t)*n_particles);
-			state.buff_particles= (particle_t*)realloc(state.buff_particles, 	sizeof(particle_t)*n_particles);
+			particles 			= (Particle*)realloc(particles, 				sizeof(Particle)*n_particles);
+			state.particles 	= (Particle*)realloc(state.particles, 		sizeof(Particle)*n_particles);
+			state.buff_particles= (Particle*)realloc(state.buff_particles, 	sizeof(Particle)*n_particles);
 
 			state.n_particles 	= n_particles;
 
@@ -783,140 +740,28 @@ class Simulation
 			if(t.joinable()) t.join();
 		}
 
-		void build_octree(tree_node_t* node, unsigned int current_depth=0)
-		{
-			unsigned int allocated_p = 0;
-
-			if(node->type == tree_node_t::ROOT)
-			{
-				octree_state.root->contained_p = (particle_t**)malloc(sizeof(particle_t*)*state.n_particles);
-
-				// Fill octree root with pointers to particles
-				for(int p_i = 0; p_i < state.n_particles; p_i++) octree_state.root->contained_p[p_i] = &state.particles[p_i];
-
-				node->size = state.domain.size;
-				node->volume = state.domain.size.x * state.domain.size.y * state.domain.size.z;
-				node->n_p = state.n_particles;
-			}
-
-			node->children = new tree_node_t[8];
-
-			vec3 size = node->size / 2.;
-
-			for(unsigned int x = 0; x < 2; x++)
-			{
-				for(unsigned int y = 0; y < 2; y++)
-				{
-					for(unsigned int z = 0; z < 2; z++)
-					{
-						node->children[x*4+y*2+z] = tree_node_t
-						{
-							.mass = 0.,
-							.n_p = 0,
-							.contained_p = NULL,
-							.coords = node->coords + vec3(x,y,z)*size,
-							.size = size,
-							.volume = size.x*size.y*size.z,
-							.parent = node,
-							.children = NULL,
-						};
-
-						tree_node_t* curr_node = &node->children[x*4+y*2+z];
-
-						// Alloc for worst case scenario, all 
-						// particles from parent not yet
-						// allocated are in the current node
-						curr_node->contained_p = (particle_t**)malloc(
-								(node->n_p - allocated_p) * sizeof(particle_t)
-						);
-
-						// Still need to iterate on the parent's list
-						for(int p_i = 0; p_i < node->n_p; p_i++)
-						{
-							particle_t* p = node->contained_p[p_i];
-
-							// If particle is already allocated
-							// in other child, continue
-							if(p == NULL) continue;
-
-							bool is_in_node =
-								p->position.x >= curr_node->coords.x &&
-								p->position.y >= curr_node->coords.y &&
-								p->position.x < curr_node->coords.x + curr_node->size.x &&
-								p->position.y < curr_node->coords.y + curr_node->size.y;
-
-							if(is_in_node)
-							{
-								// Add to child
-								curr_node->contained_p[curr_node->n_p] = p;
-								curr_node->mass += p->mass;
-
-								// Weighted center of mass (literally)
-								curr_node->center_of_mass +=
-									p->position*p->mass / curr_node->mass;
-
-								// Remove from parent
-								node->contained_p[p_i] = NULL;
-
-								curr_node->n_p++;
-							}
-						}
-						
-						if(curr_node->n_p == 0)
-						{
-							free(curr_node->contained_p);
-							curr_node->type = tree_node_t::EMPTY;
-							continue;
-						}
-
-						if(curr_node->n_p <= octree_state.min_p_in_node || current_depth >= octree_state.max_depth)
-						{
-							curr_node->type = tree_node_t::LEAF;
-
-							// Resize to fit the actual number of particles in node
-							curr_node->contained_p = (particle_t**)realloc(
-									curr_node->contained_p,
-									curr_node->n_p * sizeof(particle_t)
-							);
-						}
-						else
-						{
-							curr_node->type = tree_node_t::BRANCH;
-							build_octree(curr_node, current_depth+1);
-						}
-
-
-						allocated_p += curr_node->n_p;
-					} // z
-				} // y
-			} // x
-
-			// Only leaf nodes point to particles
-			free(node->contained_p);
-		}
-
-		void destroy_octree(tree_node_t* node)
+		void destroy_octree(TreeNode* node)
 		{
 			for(int n_i = 0; n_i < 8; n_i++)
 			{
-				tree_node_t* curr_node = &node->children[n_i];
+				TreeNode* curr_node = &node->children[n_i];
 
 				switch(curr_node->type)
 				{
 				// Has kids
-				case tree_node_t::ROOT:
-				case tree_node_t::BRANCH:
+				case TreeNode::ROOT:
+				case TreeNode::BRANCH:
 					destroy_octree(curr_node);
 					delete curr_node->children;
 					break;
 
 				// Has particles
-				case tree_node_t::LEAF:
+				case TreeNode::LEAF:
 					free(curr_node->contained_p);
 					break;
 
 				// Has none of those
-				case tree_node_t::EMPTY:
+				case TreeNode::EMPTY:
 					break;
 				}
 			}
@@ -948,8 +793,8 @@ class Simulation
 				bboxes.n_p_per_b = (int*)realloc(bboxes.n_p_per_b,
 						sizeof(int)*bboxes.nbx*bboxes.nby*bboxes.nbz);
 
-				bboxes.p_per_b   = (particle_t***)realloc(bboxes.p_per_b,
-						sizeof(particle_t**)*bboxes.nbx*bboxes.nby*bboxes.nbz);
+				bboxes.p_per_b   = (Particle***)realloc(bboxes.p_per_b,
+						sizeof(Particle**)*bboxes.nbx*bboxes.nby*bboxes.nbz);
 			}
 
 			// Incremental list, counting current index of particle when inserting
@@ -964,7 +809,7 @@ class Simulation
 			// Counting number of particles per bounding box
 			for(int p_i = 0; p_i < state.n_particles; p_i++)
 			{
-				particle_t* p = &state.particles[p_i];
+				Particle* p = &state.particles[p_i];
 
 				int x = (int)floor(p->position.x/state.domain.size.x * bboxes.nbx);
 				int y = (int)floor(p->position.y/state.domain.size.y * bboxes.nby);
@@ -988,14 +833,14 @@ class Simulation
 			// Alloc space needed in list of particles per bounding box.
 			// Only call malloc if lists contain particles
 			for(int i = 0; i < bboxes.nbx*bboxes.nby*bboxes.nbz; i++)
-				if(bboxes.n_p_per_b[i] > 0) bboxes.p_per_b[i] = (particle_t**)malloc(sizeof(particle_t*)*bboxes.n_p_per_b[i]);
+				if(bboxes.n_p_per_b[i] > 0) bboxes.p_per_b[i] = (Particle**)malloc(sizeof(Particle*)*bboxes.n_p_per_b[i]);
 
 			// Insert particles pointers in bounding boxes
 			for(int p_i = 0; p_i < state.n_particles; p_i++)
 			{
-				particle_t* p = &state.particles[p_i];
+				Particle* p = &state.particles[p_i];
 
-				if(p->bbox_xyz == ivec3(-1)) continue;
+				if(p->bbox_xyz == vec3(-1)) continue;
 
 				int xyz = 	p->bbox_xyz.x*bboxes.nby*bboxes.nbz +
 							p->bbox_xyz.y*bboxes.nbz 			+
@@ -1016,8 +861,7 @@ class Simulation
 			update_settings();
 			if(state.p_collisions || state.liquid) build_bounding_boxes();
 
-			octree_state.root->type = tree_node_t::ROOT;
-			if(state.p_gravity) build_octree(octree_state.root);
+			if(state.p_gravity) this->octree.build();
 
 			// Ceil to get every particles in case it's not round
 			int p_per_thread = ceil((num)state.n_particles/(num)state.n_threads);
@@ -1029,8 +873,8 @@ class Simulation
 				// Iterate on a given list of particles
 				for(int p_i = t_i*p_per_thread; p_i < (t_i+1)*p_per_thread && p_i < state.n_particles; p_i++)
 				{
-					particle_t* n_p = &state.buff_particles[p_i];
-					particle_t* p = &state.particles[p_i];
+					Particle* n_p = &state.buff_particles[p_i];
+					Particle* p = &state.particles[p_i];
 
 					*n_p = *p;
 					n_p->acceleration = vec3(0., 0., 0.); // Reset acceleration each frame
@@ -1055,10 +899,10 @@ class Simulation
 				// pressure and viscosity
 				if(state.liquid) for(int p_i = t_i*p_per_thread; p_i < (t_i+1)*p_per_thread && p_i < state.n_particles; p_i++)
 				{
-					particle_t* n_p = &state.buff_particles[p_i];
-					particle_t* p = &state.particles[p_i];
+					Particle* n_p = &state.buff_particles[p_i];
+					Particle* p = &state.particles[p_i];
 
-					if(n_p->density > 0.)
+					if(p->density > 0.)
 						compute_liquid_pressure_viscosity(n_p, p);
 
 					n_p->velocity += n_p->acceleration * (num)delta_t;		//  v(t) = v(t-1) + a(t)*t
@@ -1073,13 +917,13 @@ class Simulation
 			for(int t_i= 0; t_i < state.n_threads; t_i++)
 				ts[t_i].join();
 
-			tree_node_t* last_frame_root = octree_root;
-			octree_root = octree_state.root;
-			octree_state.root = octree_root;
-			if(state.p_gravity) destroy_octree(octree_state.root);
+			TreeNode* last_frame_root = octree_root;
+			octree_root = octree.root;
+			octree.root = octree_root;
+			if(state.p_gravity) destroy_octree(octree.root);
 
 			// Swap both particle buffers
-			particle_t* last_frame_data = state.particles;
+			Particle* last_frame_data = state.particles;
 			state.particles = state.buff_particles;
 			state.buff_particles = last_frame_data;
 		}
@@ -1100,8 +944,7 @@ class Simulation
 			// Free number of particles per bounding box
 			free(bboxes.n_p_per_b);
 
-			delete octree_state.root;
-			//delete octree_root;
+			delete octree.root;
 
 			free(particles);
 			free(state.particles);

@@ -27,11 +27,14 @@ Using the kernel function defined above, this equation computes the density $\rh
 
 ___
 ### Pressure $p_i$ computation
-There are multiple ways to get the pressure $p_i$. Section 1.3 (p.2) shows __Eq 9__: $$p_i = k\left(\left(\frac{\rho_i}{\rho_0}\right)^7-1\right)$$
+There are multiple ways to get the pressure $p_i$. Section 1.3 (p.2) shows __Eq 9__:
+$$p_i = k\left(\left(\frac{\rho_i}{\rho_0}\right)^7-1\right)$$
+
 Section 3.1 (p.5) proposes a few alternatives:
 $$p_i = k\left(\rho_i - \rho_0\right)$$
 or
 $$p_i = k\left(\frac{\rho_i}{\rho_0} - 1 \right)$$
+
 with $\rho_0$ the rest density (or target density) and $k$ a stiffness constant, scaling the pressure
 
 ___
@@ -54,6 +57,7 @@ With $\mathbf{a}_i = \frac{\mathbf{F}_i}{m_i}$, time integration can be used to 
 
 <br>
 <br>
+
 # Current state
 The simulation implements:
 
