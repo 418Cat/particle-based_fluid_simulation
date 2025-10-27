@@ -34,7 +34,7 @@ int main()
 
 	cam.pos = sim.settings.domain_size * vec3(0.5) - vec3(20., 0., 80.);
 	// ======================================
-	
+
 	const unsigned int frames_benchmark = 1000;
 	unsigned int n_frame = 0;
 	const bool benchmark = false;

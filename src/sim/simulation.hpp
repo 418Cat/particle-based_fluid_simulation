@@ -6,13 +6,14 @@
 #include <memory.h>
 #include <thread>
 
+#include "sim/domains/rectangle_domain.hpp"
 #include "util/maths.hpp"
 #include "particle.hpp"
 
 #include "sim/data_structures/bounding_boxes/bounding_boxes.hpp"
 #include "sim/data_structures/octree/octree.hpp"
 
-#include "sim/domains/default.hpp"
+#include "sim/domains/rectangle_domain.hpp"
 
 struct sim_state_t
 {
@@ -21,14 +22,14 @@ struct sim_state_t
 	num delta_t = 0.;
 	std::chrono::time_point<std::chrono::high_resolution_clock> last_update = std::chrono::high_resolution_clock::now();
 
-	DefaultDomain domain;
+	RectangleDomain* domain = NULL;
 
 	Particle* particles;
 	Particle* buff_particles;
 	unsigned int n_particles;
 
 	bool p_collisions;
-	enum p_collision_type_t 
+	enum p_collision_type_t
 	{
 		VELOCITY,
 		ACCELERATION
@@ -78,7 +79,7 @@ struct settings_t
 	bool particle_gravity = false;
 	num particles_gravity_factor = 1.e10;
 	bool particles_gravity_inverse = false;
-	
+
 	// (Gotta find a better name)
 	// Threshold above which particles_gravity()
 	// goes down one level deeper in the tree, based
@@ -119,12 +120,13 @@ class Simulation
 
 		void update_settings()
 		{
-			state.domain.size 			= settings.domain_size;
-			state.domain.bounciness 	= settings.domain_bounciness;
-			state.domain.gravity 		= settings.domain_gravity;
+			state.domain->rect.size		= settings.domain_size;
+			state.domain->bounciness	= settings.domain_bounciness;
+			state.domain->gravity 		= settings.domain_gravity;
+
 			for(int i = 0; i < 3; i++)
-				state.domain.gravity_axis[i] = settings.domain_gravity_axis[i];
-			state.domain.radial_gravity = settings.domain_gravity_radial;
+				state.domain->gravity_axis[i] = settings.domain_gravity_axis[i];
+			state.domain->radial_gravity = settings.domain_gravity_radial;
 
 			state.p_collisions = settings.particles_collisions;
 			state.p_collision_type = settings.collision_type;
@@ -134,9 +136,9 @@ class Simulation
 			// Clamp the number of bounding boxes to avoid
 			// bounding boxes being of size < 2*p_radius which
 			// would cause problems for collision detection
-			int max_b_x = (int)floor(state.domain.size.x/(state.p_radius*2.));
-            int max_b_y = (int)floor(state.domain.size.y/(state.p_radius*2.));
-            int max_b_z = (int)floor(state.domain.size.z/(state.p_radius*2.));
+			int max_b_x = (int)floor(state.domain->get_shape().size.x/(state.p_radius*2.));
+			int max_b_y = (int)floor(state.domain->get_shape().size.y/(state.p_radius*2.));
+			int max_b_z = (int)floor(state.domain->get_shape().size.z/(state.p_radius*2.));
 			if(settings.n_bounding_boxes_x > max_b_x)
 				settings.n_bounding_boxes_x = max_b_x;
 			if(settings.n_bounding_boxes_y > max_b_y)
@@ -186,9 +188,9 @@ class Simulation
 		void spawn_particles_as_rect(bool with_vel=true)
 		{
 			num side_length = ceil(powf(state.n_particles, 1./3.));
-			num dx = state.domain.size.x/side_length;
-			num dy = state.domain.size.y/side_length;
-			num dz = state.domain.size.z/side_length;
+			num dx = state.domain->get_shape().size.x/side_length;
+			num dy = state.domain->get_shape().size.y/side_length;
+			num dz = state.domain->get_shape().size.z/side_length;
 
 			for(int i = 0; i < state.n_particles; i++)
 			{
@@ -202,7 +204,7 @@ class Simulation
 					(int)(i/(side_length*side_length)) * dz + state.p_radius
 				);
 
-				if(with_vel) p->velocity = p->position - state.domain.size / 2.;
+				if(with_vel) p->velocity = p->position - state.domain->get_shape().size / 2.;
 				p->mass = 1.;
 
 				state.buff_particles[i] = *p;
@@ -259,7 +261,7 @@ class Simulation
 							// Squared distance for the test to avoid expensive sqrt
 							num dist_sqrd = normal.x*normal.x + normal.y*normal.y + normal.z*normal.z;
 							if(dist_sqrd == 0.) dist_sqrd = 0.01;
-							
+
 							// Collision happens, test with (2*p_radius)²
 							if(dist_sqrd < 4.*state.p_radius*state.p_radius)
 							{
@@ -269,7 +271,7 @@ class Simulation
 								// Normalize
 								normal /= dist;
 
-								// Mirror the relative velocity (B_vel - A_vel) from 
+								// Mirror the relative velocity (B_vel - A_vel) from
 								// the normal vector and dampen the bounce
 								vec3 delta_vel = -normal * dot(A->velocity - B->velocity, normal) * state.p_bounciness;
 
@@ -359,9 +361,9 @@ class Simulation
 			int I_xyz = I_x*bboxes.nby*bboxes.nbz + I_y*bboxes.nbz + I_z;
 
 			// Ratio between bboxes' size and liquid_h to avoid resizing bboxes
-			int h_to_bbox_x = ceil(state.smoothing_length_h / (state.domain.size.x / bboxes.nbx));
-			int h_to_bbox_y = ceil(state.smoothing_length_h / (state.domain.size.y / bboxes.nby));
-			int h_to_bbox_z = ceil(state.smoothing_length_h / (state.domain.size.z / bboxes.nbz));
+			int h_to_bbox_x = ceil(state.smoothing_length_h / (state.domain->get_shape().size.x / bboxes.nbx));
+			int h_to_bbox_y = ceil(state.smoothing_length_h / (state.domain->get_shape().size.y / bboxes.nby));
+			int h_to_bbox_z = ceil(state.smoothing_length_h / (state.domain->get_shape().size.z / bboxes.nbz));
 
 			int J_x = I_x - h_to_bbox_x;
 			if(J_x < 0) J_x = 0;
@@ -399,7 +401,7 @@ class Simulation
 							// Squared distance for the test to avoid expensive sqrt
 							num dist_sqrd = normal.x*normal.x + normal.y*normal.y + normal.z*normal.z;
 							if(dist_sqrd == 0.) dist_sqrd = 0.01*state.smoothing_length_h;
-							
+
 							// J is in radius h of I
 							if(dist_sqrd < state.smoothing_length_h*state.smoothing_length_h)
 							{
@@ -447,7 +449,6 @@ class Simulation
 
 		void compute_liquid_pressure_viscosity(Particle* I, Particle* old_I)
 		{
-			
 			vec3 sum_pressure = vec3(0.);
 			vec3 sum_viscosity = vec3(0.);
 
@@ -458,9 +459,9 @@ class Simulation
 			int I_xyz = I_x*bboxes.nby*bboxes.nbz + I_y*bboxes.nbz + I_z;
 
 			// Ratio between bboxes' size and liquid_h to avoid resizing bboxes
-			int h_to_bbox_x = ceil(state.smoothing_length_h / (state.domain.size.x / bboxes.nbx));
-			int h_to_bbox_y = ceil(state.smoothing_length_h / (state.domain.size.y / bboxes.nby));
-			int h_to_bbox_z = ceil(state.smoothing_length_h / (state.domain.size.z / bboxes.nbz));
+			int h_to_bbox_x = ceil(state.smoothing_length_h / (state.domain->get_shape().size.x / bboxes.nbx));
+			int h_to_bbox_y = ceil(state.smoothing_length_h / (state.domain->get_shape().size.y / bboxes.nby));
+			int h_to_bbox_z = ceil(state.smoothing_length_h / (state.domain->get_shape().size.z / bboxes.nbz));
 
 			int J_x = I_x - h_to_bbox_x;
 			if(J_x < 0) J_x = 0;
@@ -501,7 +502,7 @@ class Simulation
 							// Squared distance for the test to avoid expensive sqrt
 							num dist_sqrd = normal.x*normal.x + normal.y*normal.y + normal.z*normal.z;
 							if(dist_sqrd == 0.) dist_sqrd = 0.01;
-							
+
 							// J is in radius h of I
 							if(dist_sqrd < state.smoothing_length_h*state.smoothing_length_h)
 							{
@@ -551,7 +552,7 @@ class Simulation
 									J->mass *
 									(I->pressure / (I->density*I->density) + J->pressure / (J->density*J->density))
 									* w_ij_gradient;
-								
+
 								sum_viscosity += J->mass / J->density * (I->velocity - J->velocity)
 									* (I->position - J->position) * w_ij_gradient /
 									( (I->position - J->position)*(I->position - J->position) + 0.01 * (state.smoothing_length_h * state.smoothing_length_h));
@@ -590,7 +591,7 @@ class Simulation
 				A->acceleration += particles_gravity(old_A, octree.root);
 		}
 
-		Simulation(int n_particles) : octree(state.domain.size, &particles, state.n_particles)
+		Simulation(int n_particles) : octree(settings.domain_size, &particles, state.n_particles)
 		{
 			// Allocate needed space for particles
 			particles 			= (Particle*)malloc(sizeof(Particle)*n_particles);
@@ -600,7 +601,7 @@ class Simulation
 
 			ts = new std::thread[std::thread::hardware_concurrency()];
 
-			state.domain = DefaultDomain();
+			state.domain = new RectangleDomain(settings.domain_size);
 
 			update_settings();
 			spawn_particles_as_rect();
@@ -730,14 +731,14 @@ class Simulation
 			{
 				Particle* p = &state.particles[p_i];
 
-				int x = (int)floor(p->position.x/state.domain.size.x * bboxes.nbx);
-				int y = (int)floor(p->position.y/state.domain.size.y * bboxes.nby);
-				int z = (int)floor(p->position.z/state.domain.size.z * bboxes.nbz);
+				int x = (int)floor(p->position.x/state.domain->get_shape().size.x * bboxes.nbx);
+				int y = (int)floor(p->position.y/state.domain->get_shape().size.y * bboxes.nby);
+				int z = (int)floor(p->position.z/state.domain->get_shape().size.z * bboxes.nbz);
 				int xyz = x*bboxes.nby*bboxes.nbz + y*bboxes.nbz + z;
 
 				bool is_out =   x < 0 || y < 0 || z < 0 ||
 								x > bboxes.nbx-1 || y > bboxes.nby-1 || z > bboxes.nbz-1;
-				
+
 				// Some particles might be leaking out of the domain
 				if(is_out)
 				{
@@ -799,7 +800,7 @@ class Simulation
 					n_p->acceleration = vec3(0., 0., 0.); // Reset acceleration each frame
 
 					particles_interactions(n_p, p);
-					state.domain.interactions(n_p, p);
+					state.domain->interactions(n_p, p);
 
 					// If liquid sim, compute density and
 					// delay integration to second loop

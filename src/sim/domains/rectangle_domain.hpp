@@ -1,30 +1,42 @@
 #ifndef DEFAULT_DOMAIN_H
 #define DEFAULT_DOMAIN_H
 
+#include <stdexcept>
+
 #include "util/maths.hpp"
+#include "util/geometry/shapes/rectangle.hpp"
 
 #include "sim/particle.hpp"
+#include "sim/domains/domain.hpp"
 
-class DefaultDomain
+class RectangleDomain : public Domain
 {
 	public:
-		vec3 size = vec3(500., 500., 500.);
 		bool radial_gravity = false;
 		bool gravity_axis[3] = {false, true, false};
 		vec3 gravity = vec3(0., -9.81, 0.);
 		num bounciness = .9;
+		Rectangle rect;
 
 	public:
 
-		DefaultDomain() {}
+		RectangleDomain(vec3 size) : rect(size)
+		{}
 
-		void interactions(Particle* new_p, Particle* old_p)
+		// lkdjhqdsf
+		// qdlkjqfd
+		// qdlfkjqhsdf
+		//
+
+		~RectangleDomain() {}
+
+		void interactions(Particle* new_p, const Particle* old_p) const override
 		{
 			if(this->radial_gravity)
 			{
-				vec3 to_center = this->size/2. - old_p->position;
+				vec3 to_center = this->rect.size/2. - old_p->position;
 
-				num dist = distance(new_p->position, this->size/2.);
+				num dist = distance(new_p->position, this->rect.size/2.);
 
 				num gravity_norm = sqrt(
 					(this->gravity_axis[0] ? glm::abs(this->gravity.x) : 0.) +
@@ -77,7 +89,7 @@ class DefaultDomain
 				num* p_accel  = &((num*)&(new_p->acceleration))[i];
 				num* p_radius = &new_p->radius;
 
-				num* w_coord  = &((num*)&(this->size))[i];
+				num* w_coord  = &((num*)&(this->rect.size))[i];
 
 				// Outer wall check
 				if(*p_pos > *w_coord - *p_radius)
@@ -95,6 +107,31 @@ class DefaultDomain
 				}
 			}
 		}
+
+
+		const Rectangle& get_shape() const override
+		{
+			return this->rect;
+		}
+
+		num get_volume() const override
+		{ return this->rect.volume(); }
+
+		num get_bounciness() const override
+		{ return this->bounciness; }
+
+
+
+		void set_shape(const Shape& shape) override
+		{
+			if(shape.shape_type() != shape_t::RECTANGLE)
+				throw new std::invalid_argument(
+					"Err: Size of RectangleDomain:Domain instance must be set with Rectangle:Shape instance"
+			);
+
+			this->rect = (Rectangle&)(shape);
+		}
+
 };
 
 #endif
