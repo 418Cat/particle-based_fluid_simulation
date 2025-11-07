@@ -31,12 +31,10 @@ class TreeNode
 		} type;
 
 		static TreeNode* NEW_ROOT(vec3 size)
-		{
-			TreeNode* node = new TreeNode(ROOT, size);
-			return node;
-		}
+		{ return new TreeNode(ROOT, size); }
 
-		static TreeNode* NEW_EMPTY() {return new TreeNode(EMPTY);}
+		static TreeNode* NEW_EMPTY()
+		{ return new TreeNode(EMPTY); }
 
 		TreeNode() {}
 

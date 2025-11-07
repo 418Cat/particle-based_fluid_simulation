@@ -23,11 +23,6 @@ class RectangleDomain : public Domain
 		RectangleDomain(vec3 size) : rect(size)
 		{}
 
-		// lkdjhqdsf
-		// qdlkjqfd
-		// qdlfkjqhsdf
-		//
-
 		~RectangleDomain() {}
 
 		void interactions(Particle* new_p, const Particle* old_p) const override

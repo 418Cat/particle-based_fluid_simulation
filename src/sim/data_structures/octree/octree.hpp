@@ -22,7 +22,6 @@ class Octree
 		{
 			this->particles = particles;
 			this->root = TreeNode::NEW_ROOT(size);
-
 		}
 
 		void build(TreeNode* node=NULL, unsigned int current_depth=0)
@@ -67,7 +66,7 @@ class Octree
 
 						node->children[x*4 + y*2 + z] = child;
 
-						// Alloc for worst case scenario, all 
+						// Alloc for worst case scenario, all
 						// particles from parent not yet
 						// allocated are in the current node
 						child.contained_p = (Particle**)malloc(
@@ -105,7 +104,7 @@ class Octree
 								child.n_p++;
 							}
 						}
-						
+
 						if(child.n_p == 0)
 						{
 							free(child.contained_p);
@@ -146,7 +145,7 @@ class Octree
 			for(int n_i = 0; n_i < 8; n_i++)
 			{
 				TreeNode* curr_node = &node->children[n_i];
-				
+
 				switch(curr_node->type)
 				{
 					case TreeNode::ROOT:
@@ -158,7 +157,7 @@ class Octree
 					case TreeNode::LEAF:
 						total++;
 						break;
-					
+
 					case TreeNode::EMPTY:
 						break;
 				}

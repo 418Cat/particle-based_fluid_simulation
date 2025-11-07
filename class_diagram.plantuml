@@ -1,0 +1,303 @@
+@startuml
+
+set namespaceSeparator ::
+
+class util::geometry::shapes::Rectangle implements util::geometry::shapes::Shape {
+	+size: vec3
+
+	+Rectangle(size: vec3)
+
+	+volume(): num
+	+shape_type(): util::geometry::shapes::shape_t
+	+fitting_rectangle(): vec3
+}
+
+enum util::geometry::shapes::shape_t {
+	SPHERE
+	RECTANGLE
+}
+
+interface util::geometry::shapes::Shape {
+	+volume(): num
+	+shape_type(): util::geometry::shapes::shape_t
+	+fitting_rectangle(): vec3
+}
+
+class util::render::Camera {
+	-mouse_x: double
+	-mouse_y: double
+	-is_dragged: bool
+
+	+camera_speed: float
+	+view_dir: vec3
+	+pos: vec3
+	+fov: float
+
+	+Camera(pos: vec3, view_dir: vec3)
+
+	+turn(x_rad: float, y_rad: float): void
+	+view_mat(): glm::mat4
+	+treat_inputs(win: GLFWwindow*, delta_t: float): void
+}
+
+class util::render::Render {
+	-particles_vao: unsigned int
+	-particles_ebo: unsigned int
+	-particles_vbo: unsigned int
+	-particles_positions_vbo: unsigned int
+	-domain_vao: unsigned int
+	-domain_ebo: unsigned int
+	-domain_vbo: unsigned int
+	-boxes_vao: unsigned int
+	-boxes_ebo: unsigned int
+	-boxes_vbo: unsigned int
+	-particles_shaders: Shader*
+	-domain_shaders: Shader*
+	-window: GLFWwindow*
+	-project_mat: glm::mat4
+	-quad_vert: float[8]
+	-quad_ind: unsigned int[8]
+	-cube_vert: float[24]
+	-cube_ind: unsigned int[36]
+	-simulation: sim::Simulation*
+	-camera: util::render::Camera*
+
+	+win_x: int
+	+win_y: int
+	+show_vel: bool
+	+arrow_max_vel: float
+	+show_accel: bool
+	+arrow_max_accel: float
+	+show_borders: bool
+	+border_size: float
+	+show_boxes: bool
+	+show_density: bool
+
+	+Render(win: GLFWwindow* sim: sim::Simulation*, camera: util::render::Camera*)
+
+	+frame(): void
+	+boxes_buffer(): void
+	+domain_buffers(): void
+	+draw_domain(): void
+	+particles_buffers(): void
+	+draw_particles(): void
+}
+
+class util::ui::SimUI {
+	-max_threads: unsigned int
+	-side_window_size: float
+	-compute_momentum: bool
+	-last_momentum: float
+	-captured_momentum: float
+	-show_all_particles: bool
+	-n_particles: int
+	-clear_screen: bool
+	-col_type_selected: int
+
+	-window: GLFWwindow*
+	-sim: sim::Simulation*
+	-render: util::render::Render*
+	-camera: util::render::Camera*
+
+	+SimUI()
+
+	+side_window(): void
+	+render_start(): bool
+	+render_stop(): void
+	+end(): int
+}
+
+struct sim::sim_state_t {
+	+n_threads: unsigned int
+	+delta_t: num
+	+last_update: std::chrono::time_point
+	+domain: sim::data_structures::domains::RectangleDomain*
+	+particles: sim::Particle*
+	+buff_particles: sim::Particle*
+	+n_particles: unsigned int
+	+p_collisions: bool
+	+p_collision_type: sim::p_collision_type_t
+	+p_radius: num
+	+p_bounciness: num
+	+p_gravity: bool
+	+p_gravity_inverse: bool
+	+p_gravity_factor: num
+	+vol_dist_tresh: num
+	+liquid: bool
+	+liquid_rest_density: num
+	+smoothing_length_h: num
+	+p_liquid_kernel: liquid_kernel_f
+	+stiffness: num
+	+kin_visc: num
+}
+
+enum sim::p_collision_type_t {
+	VELOCITY
+	ACCELERATION
+}
+
+enum sim::liquid_kernel_f {
+	CUBIC_SPLINE
+}
+
+sim::sim_state_t +-- sim::p_collision_type_t
+sim::sim_state_t +-- sim::liquid_kernel_f
+
+struct sim::settings_t {
+	+run: bool
+	+n_threads: unsigned int
+	+hertz: unsigned int
+	+speed: float
+	+n_bounding_boxes_x: unsigned int
+	+n_bounding_boxes_y: unsigned int
+	+n_bounding_boxes_z: unsigned int
+	+domain_size: vec3
+	+domain_bounciness: num
+	+domain_gravity: vec3
+	+domain_gravity_axis: bool[3]
+	+domain_gravity_radial: bool
+	+particles_collisions: bool
+	+collision_type: sim::sim_state_t::p_collision_type
+	+particle_radius: num
+	+particles_bounciness: num
+	+particle_gravity: bool
+	+particles_gravity_factor: num
+	+particles_gravity_inverse: bool
+	+vol_dist_tresh: num
+	+gravity_factor: num
+	+octree_max_depth: unsigned int
+	+volume_to_distance_threshold: num
+	+octree_min_particles_in_node: unsigned int
+	+liquid_sim: bool
+	+liquid_rest_density: num
+	+smoothing_length_h: num
+	+liquid_kernel: sim::sim_state_t::liquid_kernel_f
+	+stiffness_constant_k: num
+	+kinematic_viscosity: num
+}
+
+class sim::Simulation {
+	-t: std::thread
+	-ts: std::threads*
+	-state: sim::sim_state_t
+	-bboxes: sim::data_structures::bounding_boxes::BoundingBoxes
+	-octree: sim::data_structures::octree::Octree
+
+	+settings: sim::settings_t
+	+particles: sim::Particle*
+	+octree_root: sim::data_structures::octree::TreeNode*
+
+	+update_settings(): void
+	+n_particles(): const unsigned int&
+	+sim_tick_time(): const unsigned num&
+	+get_state(): const sim::sim_state_t&
+	+spawn_particles_as_rect(with_vel: bool): void
+	+particles_collisions(A: sim::Particle*, old_A: sim::Particle*): void
+	+particles_gravity(A: sim::Particle*, N: sim::data_structures::octree::TreeNode*, depth: unsigned int): vec3
+	+compute_liquid_density(I: sim::Particle*, old_I: sim::Particle): void
+	+compute_liquid_pressure_viscosity(I: sim::Particle*, old_I: sim::Particle*): void
+	+particles_interactions(A: sim::Particle*, old_A: sim::Particle*): void
+
+	+Simulation(n_particles: int)
+
+	+reset(n_particles: int): void
+	+run(): void
+	+end(): void
+	+destroy_octree(node: sim::data_structures::octree::TreeNode*): void
+	+build_bounding_boxes(): void
+	+tick(): void
+}
+
+class sim::Particle {
+	+position: vec3
+	+velocity: vec3
+	+acceleration: vec3
+	+mass: num
+	+radius: num
+	+bbox_xyz: vec3
+	+density: num
+	+pressure: num
+
+	+collides(p: sim::Particle&, collision_info: collision_info_t*): bool
+}
+
+struct sim::collision_info_t {
+	+dist_sqrd: num
+	+normal: vec3
+
+	+//a: sim::Particle&
+	+//b: sim::Particle&
+}
+
+interface sim::domains::Domain {
+	+interactions(new_p: sim::Particle*, old_p: sim::Particle*): void
+	+get_shape(): util::geometry::shapes::Shape&
+	+get_volume(): num
+	+get_bounciness(): num
+	+set_shape(shape: util::geometry::shapes::Shape&): void
+}
+
+class sim::domains::RectangleDomain implements sim::domains::Domain {
+	+radial_gravity: bool
+	+gravity_axis: bool[3]
+	+gravity: vec3
+	+bounciness: num
+	+rect: util::geometry::shapes::Rectangle
+
+	+RectangleDomain(size: vec3)
+}
+
+class sim::data_structures::bounding_boxes::BoundingBoxes {
+	+nbx: unsigned int
+	+nby: unsigned int
+	+nbz: unsigned int
+	+p_per_b: sim::Particle***
+	+n_p_per_b: int*
+}
+
+class sim::data_structures::octree::Octree {
+	+max_depth: unsigned int
+	+min_p_in_node: unsigned int
+	+particles: sim::Particle**
+	+n_particles: unsigned int
+	+size: vec3
+	+root: sim::data_structures::octree::TreeNode
+
+	+Octree(size: vec3&, particles: sim::Particle**, n_particles: unsigned int&)
+
+	+build(node: sim::data_structures::octree::TreeNode*, current_depth: unsigned int): void
+	+total_nodes(node: sim::data_structures::octree::TreeNode*): int
+	+destroy_octree(node: sim::data_structures::octree::TreeNode*): void
+}
+
+class sim::data_structures::octree::TreeNode {
+
+	+mass: num
+	+n_p: unsigned int
+	+contained_p: sim::Particle**
+	+center_of_mass: vec3
+	+coords: vec3
+	+size: vec3
+	+volume: num
+	+parent: sim::data_structures::octree::TreeNode*
+	+children: sim::data_structures::octree::TreeNode*
+
+	+TreeNode()
+
+	+{static} NEW_ROOT(size: vec3): sim::data_structures::octree::TreeNode*
+	+{static} NEW_EMPTY(): sim::data_structures::octree::TreeNode*
+
+	-TreeNode(type: node_type, size: vec3)
+	-TreeNode(t: node_type)
+}
+
+enum sim::data_structures::octree::node_type {
+	ROOT
+	BRANCH
+	LEAF
+	EMPTY
+}
+
+sim::data_structures::octree::TreeNode +-- sim::data_structures::octree::node_type
+
+@enduml

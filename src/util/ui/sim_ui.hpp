@@ -35,13 +35,13 @@ class SimUI
 		Simulation* sim = NULL;
 		Render* render = NULL;
 		Camera* camera = NULL;
-	
+
 		SimUI()
 		{
 			// Couldn't get max number of threads, defaulting to 1.
 			// (Assuming there's at least one thread, otherwise
 			// they'd have bigger issues than this)
-			if(max_threads < 1) max_threads = 1; 
+			if(max_threads < 1) max_threads = 1;
 
 			UI::ui_init();
 			UI::show_ui = true;
@@ -59,14 +59,14 @@ class SimUI
 			));
 			ImGui::SetNextWindowSize(ImVec2(
 						render->win_x * side_window_size,
-						render->win_y	
+						render->win_y
 			));
-			
+
 			ImGui::Begin(
 					"side_window",
 					NULL,
-						ImGuiWindowFlags_NoDecoration 	|
-						ImGuiWindowFlags_NoResize		|
+						ImGuiWindowFlags_NoDecoration	|
+						ImGuiWindowFlags_NoResize				|
 						ImGuiWindowFlags_NoMove
 			);
 
@@ -147,7 +147,7 @@ class SimUI
 				ImGui::InputDouble("Domain bounciness", &sim->settings.domain_bounciness, 0.05);
 				ImGui::InputDouble("Particles bounciness", &sim->settings.particles_bounciness, 0.05);
 				ImGui::InputDouble("Particles radius", &sim->settings.particle_radius, 0.05);
-				
+
 				ImGui::EndTabItem();
 			}
 
@@ -220,7 +220,7 @@ class SimUI
 				ImGui::SameLine();
 				ImGui::DragFloat("Domain borders size", &render->border_size, render->border_size/10., 0., 5., "%.1f %%");
 				ImGui::Spacing();ImGui::Spacing();
-				
+
 				ImGui::Separator();
 				ImGui::Spacing();
 				ImGui::Checkbox("Clear screen", &clear_screen);
@@ -299,7 +299,7 @@ class SimUI
 
 						ImGui::TableSetColumnIndex(0);
 						ImGui::Text("%d", i);
-						
+
 						ImGui::TableNextColumn();
 						ImGui::Text("(%.1f , %.1f, %.1f)", A->position.x, A->position.y, A->position.z);
 
@@ -341,7 +341,7 @@ class SimUI
 		// Only function to call every frame
 		bool render_start()
 		{
-			if(UI::ui_is_shown()) 
+			if(UI::ui_is_shown())
 			{
 				UI::ui_render_start(!clear_screen & UI_RENDER_FLAG_NO_CLEAR);
 				SimUI::side_window();
