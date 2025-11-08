@@ -103,10 +103,10 @@ class Render
 		int win_y = 1;
 		
 		bool show_vel = false;
-		float arrow_max_vel = 20.;
+		float color_max_vel = 20.;
 
 		bool show_accel = false;
-		float arrow_max_accel = 20.;
+		float color_max_accel = 20.;
 
 		bool show_borders = true;
 		float border_size = 1.;
@@ -291,10 +291,10 @@ class Render
 			);
 
 			particles_shaders->setBool("show_vel", this->show_vel);
-			particles_shaders->setFloat("arrow_max_vel", this->arrow_max_vel);
+			particles_shaders->setFloat("color_max_vel", this->color_max_vel);
 
 			particles_shaders->setBool("show_accel", this->show_accel);
-			particles_shaders->setFloat("arrow_max_accel", this->arrow_max_accel);
+			particles_shaders->setFloat("color_max_accel", this->color_max_accel);
 			particles_shaders->setMat4("view_mat",
 					(float*)glm::value_ptr(this->camera->view_mat())
 			);
@@ -311,7 +311,7 @@ class Render
 			particles_shaders->setBool("show_bboxes",
 					this->show_boxes
 			);
-			
+
 			particles_shaders->setBool("show_density",
 					this->show_density
 			);

@@ -7,10 +7,10 @@ in float density;
 in vec3 bboxes_xyz;
 
 uniform bool show_vel;
-uniform float arrow_max_vel;
+uniform float color_max_vel;
 
 uniform bool show_accel;
-uniform float arrow_max_accel;
+uniform float color_max_accel;
 
 uniform bool show_density;
 
@@ -23,9 +23,9 @@ out vec4 col;
 // https://iquilezles.org/articles/distfunctions2d/
 float sdSegment( in vec2 p, in vec2 a, in vec2 b )
 {
-    vec2 pa = p-a, ba = b-a;
-    float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
-    return length( pa - ba*h );
+	vec2 pa = p-a, ba = b-a;
+	float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
+	return length( pa - ba*h );
 }
 
 float arrow_dist(vec2 uv, vec2 value, float max_val)
@@ -51,32 +51,35 @@ void main()
 
 	vec3 inside_col = vec3(1.);
 	vec3 outside_col = vec3(0.3);
+	float outside_inside_ratio = 0.5;
+
+	vec3 vel_col = vec3(1.);
+	vec3 accel_col = vec3(1.);
 
 	if(show_vel)
 	{
-		vec3 vel_ratio = abs(velocity) / arrow_max_vel;
-
-		inside_col.r = vel_ratio.x;
-		inside_col.g = vel_ratio.y;
-		inside_col.b = vel_ratio.z;
+		vel_col.r = log(1. + abs(velocity.x)) / log(1.+color_max_vel);
+		vel_col.g = log(1. + abs(velocity.y)) / log(1.+color_max_vel);
+		vel_col.b = log(1. + abs(velocity.z)) / log(1.+color_max_vel);
 	}
+
 	if(show_accel)
 	{
-		vec3 acc_ratio = abs(acceleration) / arrow_max_accel;
-
-		outside_col.r = 1. - 1./acc_ratio.x;
-		outside_col.g = 1. - 1./acc_ratio.y;
-		outside_col.b = 1. - 1./acc_ratio.z;
+		accel_col.r = log(1. + abs(acceleration.x)) / log(1.+color_max_accel);
+		accel_col.g = log(1. + abs(acceleration.y)) / log(1.+color_max_accel);
+		accel_col.b = log(1. + abs(acceleration.z)) / log(1.+color_max_accel);
 	}
 
-	col = vec4(
-			inside_col  * (1.-radius) +
-			outside_col * radius,
-			1.);
+	vec3 rgb_col =
+		vel_col*inside_col*(1.-radius) / (1. - outside_inside_ratio) + 
+		accel_col*outside_col*radius / outside_inside_ratio;
 
 	if(show_density)
-		col.r += log(density+1.);
-	
+		rgb_col.r += density+1.;
+
 	if(show_bboxes)
-		col.rgb = pow(bboxes_xyz / 30., vec3(1. / 2.4));
+		rgb_col.rgb = log(bboxes_xyz + 1) / log(100.); // TODO: Pass max bboxes
+
+	col = vec4(rgb_col,1.);
+
 }

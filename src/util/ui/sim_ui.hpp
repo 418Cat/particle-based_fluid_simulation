@@ -201,11 +201,11 @@ class SimUI
 
 				ImGui::BeginDisabled(render->show_boxes);
 				ImGui::Checkbox("Show##vel", &render->show_vel);
-				ImGui::DragFloat("Max Velocity", &render->arrow_max_vel, render->arrow_max_vel/10. + 0.0001, 0.);
+				ImGui::DragFloat("Max Velocity", &render->color_max_vel, render->color_max_vel/10. + 0.0001, 0.);
 
 				ImGui::Spacing();ImGui::Spacing();
 				ImGui::Checkbox("Show##accel", &render->show_accel);
-				ImGui::DragFloat("Max Acceleration", &render->arrow_max_accel, render->arrow_max_accel/10. + 0.0001, 0.);
+				ImGui::DragFloat("Max Acceleration", &render->color_max_accel, render->color_max_accel/10. + 0.0001, 0.);
 				ImGui::EndDisabled();
 
 				ImGui::Spacing();ImGui::Spacing();
