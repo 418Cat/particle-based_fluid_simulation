@@ -12,7 +12,10 @@
 #include <imgui.h>
 #include <ui.h>
 
+#include "util/maths.hpp"
 
+// Number of frames used to average out performance readings
+#define n_frames_perf_avg 25u
 
 class SimUI
 {
@@ -28,6 +31,11 @@ class SimUI
 		int n_particles = 0;
 		bool clear_screen = true;
 		int col_type_selected = 0;
+
+		num perf_readings[n_frames_perf_avg]; // In microseconds
+		unsigned int curr_perf_frame = 0;
+
+
 		// ==============================
 
 	public:
@@ -45,6 +53,10 @@ class SimUI
 
 			UI::ui_init();
 			UI::show_ui = true;
+
+			// Init at 0
+			for(int i = 0; i < n_frames_perf_avg; i++)
+				perf_readings[i] = 0.0;
 
 			SimUI::window = UI::window;
 		}
@@ -238,10 +250,26 @@ class SimUI
 				ImGui::Text("Number of particles: %d", sim->n_particles());
 
 				ImGui::Separator();
-				ImGui::Text("Sim time: %.1f µs", sim->sim_tick_time()*1.e6);
+
+
+				// Insert perf reading
+				if(sim->settings.run)
+					this->perf_readings[curr_perf_frame] = sim->sim_tick_time()*1.e6;
+
+				// Compute average frame time
+				num avg = 0.;
+				for(int i = 0; i < n_frames_perf_avg; i++)
+					avg += this->perf_readings[i];
+
+				avg /= n_frames_perf_avg;
+
+				// Increment + mod
+				curr_perf_frame = (curr_perf_frame+1) % n_frames_perf_avg;
+
+				ImGui::Text("Sim time: %.1f µs", avg);
 				ImGui::Text("Sim goal time: %.1f µs", 1.e6 / (float)sim->settings.hertz);
 
-				float ratio = 1./ (sim->sim_tick_time() * (float)sim->settings.hertz);
+				float ratio = (1.e6 / (float)sim->settings.hertz) / avg;
 				ImGui::Text("Performance: %.1f %%", ratio*100.);
 				ImGui::ProgressBar(ratio);
 

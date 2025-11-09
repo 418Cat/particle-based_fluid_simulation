@@ -93,6 +93,8 @@ class util::ui::SimUI {
 	-n_particles: int
 	-clear_screen: bool
 	-col_type_selected: int
+    -perf_readings: num[]
+    -curr_perf_frame: unsigned int
 
 	-window: GLFWwindow*
 	-sim: sim::Simulation*

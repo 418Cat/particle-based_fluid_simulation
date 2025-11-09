@@ -112,7 +112,7 @@ class Render
 		float border_size = 1.;
 
 		bool show_boxes = false;
-		bool show_density = true;
+		bool show_density = false;
 
 		Render(GLFWwindow* win, Simulation* sim, Camera* camera)
 		{
